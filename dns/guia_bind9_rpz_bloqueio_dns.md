@@ -6,6 +6,8 @@ Este guia mostra como configurar um filtro de DNS usando **Response Policy Zones
 
 **Pré-requisito:** Você já deve ter um servidor BIND9 instalado e funcionando como um servidor de DNS recursivo para sua rede.
 
+Se você quer uma implantação completa (produção) do BIND9 no Debian 13, veja: **[BIND 9 no Debian 13 — Master/Slave + TSIG + DNSSEC](../dns/guia_producao_bind9_debian13.md)**.
+
 ---
 
 ## Índice rápido

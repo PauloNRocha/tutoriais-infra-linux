@@ -4,7 +4,7 @@
 
 Neste guia, vamos configurar interfaces de rede com fio no **Debian 12 (Bookworm)** de forma estável e previsível, usando `ifupdown` e nomes de interface consistentes. Ele funciona bem para servidores e desktops. Se você usa Desktop com NetworkManager, veja a seção 4.
 
-Veja também: Configuração de Wi‑Fi em `guia_configurar_wifi_debian12.md`.
+Veja também: [Configuração de Wi‑Fi – Debian 12](../rede/guia_configurar_wifi_debian12.md).
 
 ---
 
