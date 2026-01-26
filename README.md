@@ -78,7 +78,6 @@ Nada aqui é publicado “no automático”.
 |------|-----------|
 | [Configuração de Rede no Debian 12](rede/guia_configurar_rede_debian12.md) | Configuração de interfaces, IP fixo e DHCP no Debian. |
 | [Configuração de Wi-Fi no Debian 12](rede/guia_configurar_wifi_debian12.md) | Conexão e troubleshooting de redes Wi-Fi. |
-| [Servidor Speedtest para ISP (Debian 13)](rede/guia_producao_speedtest_isp_debian13.md) | Ookla Server + LibreSpeed com HTTPS, nftables e tuning. |
 
 ---
 
