@@ -1,6 +1,7 @@
 # Guia de Produção: Unbound no Debian 13 (Trixie), DNS Recursivo para ISPs com DNSSEC e RPZ (bloqueio por segurança)
 
 *Criado em: 23 de janeiro de 2026*  
+*Última atualização em: 26 de janeiro de 2026*  
 
 Este guia detalha o processo completo para configurar um servidor DNS recursivo de alta performance usando **Unbound** em um ambiente de **Provedor de Internet (ISP)** no **Debian 13 (Trixie)**. A configuração é otimizada para segurança e desempenho, incluindo **DNSSEC**, **QNAME Minimization (Minimização de QNAME)** e **RPZ (Response Policy Zones)** para bloqueio de domínios associados a ameaças (phishing/malware/C2), com atualização automatizada.
 
@@ -1492,14 +1493,21 @@ extract_domains_from_phishtank_csv() {
   # Este guia usa o dump público (online-valid.csv). A API existe (informativo),
   # mas não é necessária aqui.
   #
-  # Formato esperado: CSV com URL em algum campo; aqui fazemos um parse simples:
-  # - filtra somente linhas com http/https
-  # - remove aspas
-  # - pega substring após esquema
-  # - corta no primeiro /
-  (grep -E 'https?://' "$1" || true) \
+  # Formato (na prática): cada linha do dump CSV contém múltiplas URLs, incluindo:
+  # - a URL do phishing (coluna "url")
+  # - a URL de detalhe do próprio PhishTank (coluna "phish_detail_url")
+  #
+  # IMPORTANTE: se você processar a linha inteira e “pegar a última URL”, você tende
+  # a capturar o domínio do PhishTank (ex.: www.phishtank.com), e não o domínio malicioso.
+  #
+  # Estratégia (simples e previsível):
+  # 1) Extrair apenas a URL da coluna "url" (2ª coluna no dump mais comum)
+  # 2) Remover aspas
+  # 3) Remover esquema, caminho e porta para ficar só com o host
+  cut -d, -f2 "$1" \
+    | (grep -E '^https?://' || true) \
     | sed 's/\"//g' \
-    | sed -E 's#.*https?://##g' \
+    | sed -E 's#^https?://##g' \
     | sed -E 's#/.*##g' \
     | sed -E 's/:[0-9]+$//g'
 }
