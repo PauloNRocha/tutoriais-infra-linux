@@ -1,7 +1,7 @@
 # Guia Operacional de Produção: Krill RPKI com Nginx e nftables no Debian 13
 
 *Criado em 03 de Janeiro de 2026*
-*Última atualização em 08 de janeiro de 2026*
+*Última atualização em 30 de janeiro de 2026*
 
 Este guia detalha o processo completo para instalar, configurar e proteger uma Autoridade Certificadora (CA) de RPKI usando o **Krill (NLnet Labs)** em um servidor **Debian 13 (Trixie)**. Focamos em um ambiente de produção seguro, incluindo a configuração de Nginx como proxy reverso para acesso via HTTPS e o uso de `nftables` para o firewall.
 
@@ -241,6 +241,8 @@ ssh -L 3000:localhost:3000 usuario@IP_OU_HOST_DO_SERVIDOR # Cria um túnel da po
 ```
 - `usuario`: Seu nome de usuário SSH no servidor.
 - `IP_OU_HOST_DO_SERVIDOR`: O endereço IP ou hostname do seu servidor Krill.
+
+Veja também: ../acesso-remoto/guia_producao_ssh_chave_publica_linux.md
 
 Após estabelecer o túnel, acesse a interface do Krill no seu navegador local:
 - Se o Krill estiver configurado com HTTPS padrão (autoassinado): `https://localhost:3000`

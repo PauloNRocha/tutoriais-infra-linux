@@ -1,7 +1,7 @@
 # Guia de Produção: Unbound no Debian 13 (Trixie), DNS Recursivo para ISPs com DNSSEC e RPZ (bloqueio por segurança)
 
 *Criado em: 23 de janeiro de 2026*  
-*Última atualização em: 26 de janeiro de 2026*  
+*Última atualização em: 30 de janeiro de 2026*  
 
 Este guia detalha o processo completo para configurar um servidor DNS recursivo de alta performance usando **Unbound** em um ambiente de **Provedor de Internet (ISP)** no **Debian 13 (Trixie)**. A configuração é otimizada para segurança e desempenho, incluindo **DNSSEC**, **QNAME Minimization (Minimização de QNAME)** e **RPZ (Response Policy Zones)** para bloqueio de domínios associados a ameaças (phishing/malware/C2), com atualização automatizada.
 
@@ -2025,6 +2025,8 @@ table inet filter {
 
 > **Atenção (SSH):** se você está conectado via SSH, ajuste a regra de SSH **antes** de aplicar, ou use console/iDRAC/VM console para não se trancar.  
 > Exemplo (substitua pela sua rede de gerência/VPN): descomente e restrinja `tcp dport 22` para `ip saddr 192.0.2.0/24`.
+
+Veja também: ../acesso-remoto/guia_producao_ssh_chave_publica_linux.md
 
 Valide a sintaxe sem aplicar
 

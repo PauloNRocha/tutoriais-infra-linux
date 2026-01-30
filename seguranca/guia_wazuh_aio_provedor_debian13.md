@@ -1,7 +1,7 @@
 # Wazuh — Guia de Produção All-in-One para Provedores (Debian 13)
 
 *Criado em 18 de dezembro de 2025*
-*Última atualização em 16 de Janeiro de 2026*
+*Última atualização em 30 de janeiro de 2026*
 
 **Cenário:** Provedor de internet de pequeno a médio porte com múltiplos servidores Linux e roteadores MikroTik.  
 **Arquitetura:** All-in-One (Manager + Indexer + Dashboard + Filebeat no mesmo host)  
@@ -67,6 +67,8 @@ Vamos preparar o sistema operacional para receber o Wazuh, garantindo estabilida
     - política padrão **DROP** no `input`;
     - firewall **stateful** (aceita conexões estabelecidas/relacionadas);
     - libera apenas o necessário por **rede de origem** (melhor para ISP do que “abrir portas para o mundo”).
+    
+    Veja também: ../acesso-remoto/guia_producao_ssh_chave_publica_linux.md
 
     3.1) Habilite o serviço:
     ```bash

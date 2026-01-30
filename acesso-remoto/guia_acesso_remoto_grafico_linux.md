@@ -1,6 +1,6 @@
 # Guia de Acesso Remoto Gráfico no Debian 12 (XRDP, AnyDesk, TeamViewer)
 
-*Criado em 04 de dezembro de 2025 e atualizado em 08 de dezembro de 2025*
+*Criado em 04 de dezembro de 2025 e atualizado em 30 de janeiro de 2026*
 
 Este guia mostra como configurar acesso remoto gráfico em um servidor Debian 12, permitindo acesso por interface gráfica de forma semelhante ao que se faz em servidores Windows. O conteúdo cobre instalação e configuração de **XRDP**, **AnyDesk** e **TeamViewer**, além de soluções para problemas comuns.
 
@@ -118,6 +118,8 @@ Se suas máquinas virtuais (Virt-Manager, etc.) são encerradas ao iniciar uma s
 
 ### Conclusão
 Configurar acesso remoto gráfico é simples, mas exige cuidado com segurança. Em servidores expostos à internet, a recomendação é usar **acesso via SSH** como método principal e habilitar acesso gráfico apenas quando necessário, preferencialmente protegido por firewall ou VPN.
+
+Veja também: guia_producao_ssh_chave_publica_linux.md
 
 ---
 

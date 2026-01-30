@@ -41,6 +41,7 @@ Nada aqui é publicado “no automático”.
 | Título | Descrição |
 |------|-----------|
 | [Guia de Acesso Remoto Gráfico (XRDP, AnyDesk, TeamViewer)](acesso-remoto/guia_acesso_remoto_grafico_linux.md) | Configuração de acesso remoto gráfico em servidores Linux, incluindo resolução de problemas comuns e boas práticas. |
+| [Acesso SSH por chave pública (porta customizada)](acesso-remoto/guia_producao_ssh_chave_publica_linux.md) | Padronização de acesso SSH em produção com login somente por chave, porta customizada e aliases para múltiplos servidores. |
 
 ---
 
