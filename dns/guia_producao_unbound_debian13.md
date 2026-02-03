@@ -2026,7 +2026,7 @@ table inet filter {
 > **Atenção (SSH):** se você está conectado via SSH, ajuste a regra de SSH **antes** de aplicar, ou use console/iDRAC/VM console para não se trancar.  
 > Exemplo (substitua pela sua rede de gerência/VPN): descomente e restrinja `tcp dport 22` para `ip saddr 192.0.2.0/24`.
 
-Veja também: ../acesso-remoto/guia_producao_ssh_chave_publica_linux.md
+Veja também: [Guia de Produção: Acesso SSH por chave pública (porta customizada) em servidores Linux](../acesso-remoto/guia_producao_ssh_chave_publica_linux.md)
 
 Valide a sintaxe sem aplicar
 

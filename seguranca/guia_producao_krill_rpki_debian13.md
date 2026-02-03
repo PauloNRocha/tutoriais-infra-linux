@@ -242,7 +242,7 @@ ssh -L 3000:localhost:3000 usuario@IP_OU_HOST_DO_SERVIDOR # Cria um túnel da po
 - `usuario`: Seu nome de usuário SSH no servidor.
 - `IP_OU_HOST_DO_SERVIDOR`: O endereço IP ou hostname do seu servidor Krill.
 
-Veja também: ../acesso-remoto/guia_producao_ssh_chave_publica_linux.md
+Veja também: [Guia de Produção: Acesso SSH por chave pública (porta customizada) em servidores Linux](../acesso-remoto/guia_producao_ssh_chave_publica_linux.md)
 
 Após estabelecer o túnel, acesse a interface do Krill no seu navegador local:
 - Se o Krill estiver configurado com HTTPS padrão (autoassinado): `https://localhost:3000`
@@ -324,6 +324,7 @@ Para checar se a renovação automática está funcionando (simulação):
 sudo certbot renew --dry-run # Simula a renovação do certificado
 ```
 
+<a id="5.2.5"></a>
 #### 5.2.5 Configurar o Proxy HTTPS para o Krill (Interface Web)
 
 Edite o mesmo arquivo de configuração do Nginx (`/etc/nginx/sites-available/krill`) para adicionar a seção HTTPS.

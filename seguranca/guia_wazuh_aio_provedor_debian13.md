@@ -68,7 +68,7 @@ Vamos preparar o sistema operacional para receber o Wazuh, garantindo estabilida
     - firewall **stateful** (aceita conexões estabelecidas/relacionadas);
     - libera apenas o necessário por **rede de origem** (melhor para ISP do que “abrir portas para o mundo”).
     
-    Veja também: ../acesso-remoto/guia_producao_ssh_chave_publica_linux.md
+    Veja também: [Guia de Produção: Acesso SSH por chave pública (porta customizada) em servidores Linux](../acesso-remoto/guia_producao_ssh_chave_publica_linux.md)
 
     3.1) Habilite o serviço:
     ```bash

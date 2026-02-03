@@ -159,7 +159,7 @@ sudo timedatectl set-ntp true
 >
 > **Produção:** restrinja o SSH ao seu IP/VPN/bastion sempre que possível.
 
-Veja também: ../acesso-remoto/guia_producao_ssh_chave_publica_linux.md
+Veja também: [Guia de Produção: Acesso SSH por chave pública (porta customizada) em servidores Linux](../acesso-remoto/guia_producao_ssh_chave_publica_linux.md)
 
 Edite `/etc/nftables.conf`:
 

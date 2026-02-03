@@ -119,7 +119,7 @@ Se suas máquinas virtuais (Virt-Manager, etc.) são encerradas ao iniciar uma s
 ### Conclusão
 Configurar acesso remoto gráfico é simples, mas exige cuidado com segurança. Em servidores expostos à internet, a recomendação é usar **acesso via SSH** como método principal e habilitar acesso gráfico apenas quando necessário, preferencialmente protegido por firewall ou VPN.
 
-Veja também: guia_producao_ssh_chave_publica_linux.md
+Veja também: [Guia de Produção: Acesso SSH por chave pública (porta customizada) em servidores Linux](guia_producao_ssh_chave_publica_linux.md)
 
 ---
 
