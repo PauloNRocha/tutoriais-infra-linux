@@ -24,8 +24,8 @@ Pode acontecer de algo não funcionar para você exatamente da mesma forma que f
 
 ## O que você vai encontrar aqui
 
-Aqui você poderá encontrar guias voltados para ambientes de produção, com foco em Linux. Tenho preferencia por programas livres e de código aberto.
-Também tento deixar os passos bem detalhados, porque muita coisa fica como material de consulta para depois.
+A maior parte dos guias aqui é voltada para ambiente de produção, com foco em Linux, redes e ISP. Sempre que dá, prefiro usar software livre e de código aberto.
+Também tento deixar os passos bem detalhados, porque muita coisa depois vira consulta para mim mesmo.
 
 ## Índice de tutoriais
 

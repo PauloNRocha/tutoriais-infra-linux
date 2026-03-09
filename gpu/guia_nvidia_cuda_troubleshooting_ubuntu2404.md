@@ -1,11 +1,12 @@
 # Guia de Produção: Troubleshooting NVIDIA + CUDA no Ubuntu 24.04
 
-*Criado em 29 de setembro de 2025 e atualizado em 08 de dezembro de 2025*
+*Criado em: 29 de setembro de 2025*
+*Última atualização em: 08 de dezembro de 2025*
 
-Este guia é um **runbook** de troubleshooting para **driver NVIDIA** e **CUDA** no Ubuntu 24.04.  
-O foco é operação previsível: identificar rapidamente se o problema é **módulo do kernel**, **Secure Boot**, **headers/DKMS**, **conflito de métodos de instalação** ou ausência do **CUDA Toolkit**.
+Montei este guia para deixar registrado o caminho que costumo seguir quando algo quebra no Ubuntu 24.04 com **driver NVIDIA** e **CUDA**.  
+A ideia aqui é ir direto ao ponto: identificar se o problema está em **módulo do kernel**, **Secure Boot**, **headers/DKMS**, **conflito entre métodos de instalação** ou ausência do **CUDA Toolkit**.
 
-Contexto onde este troubleshooting foi usado (exemplo real): notebook com GPU híbrida e NVIDIA GTX 1650. As versões citadas (driver/CUDA/kernel) são **exemplos**; ajuste para o seu ambiente.
+Esse troubleshooting foi usado, por exemplo, em um notebook com GPU híbrida e NVIDIA GTX 1650. As versões citadas de driver, CUDA e kernel são **exemplos**; ajuste para o seu ambiente.
 
 ---
 
@@ -32,11 +33,22 @@ Contexto onde este troubleshooting foi usado (exemplo real): notebook com GPU h�
 <a id="1"></a>
 ## 1) Fluxo de diagnóstico rápido
 
-Quando algo dá errado com o driver da NVIDIA, siga estes 5 passos antes de mergulhar nos erros específicos.
+Quando algo dá errado com o driver da NVIDIA, comece por estes 5 passos antes de mergulhar nos erros específicos.
 
 1) O driver está carregado?
     ```bash
     nvidia-smi
+    ```
+    Exemplo genérico de saída saudável:
+    ```text
+    Fri Sep 29 10:00:00 2025
+    +--------------------------------------------------------------+
+    | NVIDIA-SMI 580.95.05   Driver Version: 580.95.05             |
+    | CUDA Version: 13.0                                           |
+    +--------------------------------------------------------------+
+    | GPU  Name              Bus-Id               Memory-Usage     |
+    | 0    NVIDIA GPU        00000000:01:00.0     512MiB / 4096MiB |
+    +--------------------------------------------------------------+
     ```
     Se funcionar, o driver está carregado. Se falhar com “couldn't communicate”, o módulo não subiu.
 
@@ -57,6 +69,12 @@ Quando algo dá errado com o driver da NVIDIA, siga estes 5 passos antes de merg
     lsmod | grep nouveau
     ```
     Se retornar algo, o `nouveau` ainda está ativo e pode conflitar. Revise `/etc/modprobe.d/blacklist-nouveau.conf`.
+    Exemplo mínimo esperado do arquivo:
+    ```bash
+    cat /etc/modprobe.d/blacklist-nouveau.conf
+    blacklist nouveau
+    options nouveau modeset=0
+    ```
 
 5) Você tem os `headers` corretos para o seu kernel?
     ```bash
@@ -76,10 +94,12 @@ Ao rodar `ubuntu-drivers autoinstall`, o sistema tenta **remover** a série **58
 Causa  
 O `ubuntu-drivers` escolhe o **driver recomendado “estável”** pela Canonical (geralmente a série 570), mesmo que você já esteja numa versão mais nova (580).
 
-Como resolver (se você quer manter uma versão específica)
+Como resolver se você quer manter uma versão específica.
+
+Se você decidiu usar driver via .run, evite misturar com autoinstall/metapacotes do Ubuntu.
+
+O "hold" abaixo é opcional e deve ser usado com cuidado: revise depois com `apt-mark showhold`.
 ```bash
-# Se você decidiu usar driver via .run, evite misturar com autoinstall/metapacotes do Ubuntu.
-# O "hold" abaixo é opcional e deve ser usado com cuidado: revise depois com `apt-mark showhold`.
 sudo apt-mark hold libnvidia-compute-580 libxnvctrl0 nvidia-driver-580 nvidia-driver-580-open nvidia-driver-570 ubuntu-drivers-common
 ```
 Observação: se o seu objetivo é estabilidade, escolha um método e mantenha consistência (APT *ou* `.run`).
@@ -96,19 +116,26 @@ Causa
 O instalador precisa parar o **Xorg/Wayland** para compilar/configurar módulos com segurança.
 
 Como resolver
-```bash
-# Entrar em TTY:
-Ctrl + Alt + F3
 
-# Parar o display manager (ajuste ao seu caso):
+Entrar em TTY:
+```bash
+Ctrl + Alt + F3
+```
+
+Parar o display manager (ajuste ao seu caso):
+```bash
 sudo systemctl stop gdm
 # ou: sudo systemctl stop sddm
 # ou: sudo systemctl stop lightdm
+```
 
-# Executar o instalador:
+Executar o instalador:
+```bash
 sudo ./NVIDIA-Linux-x86_64-580.82.09.run
+```
 
-# No fim, reinicie:
+No fim, reinicie:
+```bash
 sudo reboot
 ```
 
@@ -123,7 +150,7 @@ O `.run` detecta que já existe um **driver instalado via pacotes do Ubuntu** e 
 Causa  
 Coexistência de dois métodos (APT vs `.run`) pode gerar conflitos.
 
-Como resolver (se você vai ficar com o `.run`)
+Como resolver se você vai ficar com o `.run`
 - No prompt, escolha **Continue installation**.  
 - Depois da instalação bem-sucedida, remova vestígios dos pacotes APT para reduzir conflito/downgrade.
 
@@ -131,8 +158,10 @@ Importante: este comando é agressivo. Em ambiente desktop, revise o que será r
 ```bash
 sudo apt purge 'nvidia*'
 sudo apt autoremove --purge -y
+```
 
-# (Opcional) “hold” para evitar reinstalação indesejada via APT
+(Opcional) “hold” para evitar reinstalação indesejada via APT
+```bash
 sudo apt-mark hold libnvidia-compute-580 libxnvctrl0 nvidia-driver-580 nvidia-driver-580-open nvidia-driver-570 ubuntu-drivers-common
 ```
 
@@ -147,7 +176,7 @@ Aviso dizendo que o sistema **não está preparado para 32-bit** e as libs 32-bi
 Causa  
 Arquitetura `i386` não está habilitada, e/ou libs 32-bit não estão presentes. **Para IA/CUDA não é necessário**.
 
-Como resolver (se você realmente precisa de 32-bit para jogos/Wine/Steam)
+Como resolver se você realmente precisa de 32-bit para jogos/Wine/Steam
 ```bash
 sudo dpkg --add-architecture i386
 sudo apt update
@@ -173,8 +202,10 @@ Como resolver
 sudo apt install pkg-config libglvnd-dev -y
 # (opcional) libs EGL/GLES
 sudo apt install libegl1 libgles2 -y
+```
 
-# Reexecute o instalador .run
+Reexecute o instalador .run
+```bash
 sudo ./NVIDIA-Linux-x86_64-580.82.09.run
 # Se ainda pedir caminho, informe:
 # --glvnd-egl-config-path=/usr/share/glvnd/egl_vendor.d
@@ -226,7 +257,7 @@ nvidia: module verification failed: signature and/or required key missing - tain
 e/ou o kernel aparece “tainted”.
 
 Causa  
-Com **Secure Boot** habilitado, o kernel pode **recusar módulos não assinados**. O “tainted” é um **aviso** de que há código proprietário — é normal com o driver NVIDIA.
+Com **Secure Boot** habilitado, o kernel pode **recusar módulos não assinados**. O “tainted” é um **aviso** de que há código proprietário, é normal com o driver NVIDIA.
 
 Como resolver (opções)
 
@@ -445,7 +476,7 @@ nvcc cuda_test.cu -o cuda_test && ./cuda_test
 
 ---
 
-Este guia reúne erros comuns e um fluxo de diagnóstico para manter Ubuntu 24.04 + NVIDIA + CUDA funcionando de forma previsível.
+Resolvi juntar esse material porque esse tipo de problema costuma consumir tempo demais quando a gente tenta lembrar tudo de cabeça. Então preferi deixar um roteiro de consulta rápida, com os erros mais comuns e o que normalmente resolve cada um deles no Ubuntu 24.04 com NVIDIA + CUDA.
 
 ---
 
@@ -463,6 +494,8 @@ Este guia reúne erros comuns e um fluxo de diagnóstico para manter Ubuntu 24.0
 - `update-initramfs(8)`: https://manpages.debian.org/bookworm/initramfs-tools/update-initramfs.8.en.html
 
 ---
+
+## Créditos
 
 Autor: Paulo Rocha  
 Repositório: https://github.com/PauloNRocha
