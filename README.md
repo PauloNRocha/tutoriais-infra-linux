@@ -1,38 +1,31 @@
 # Tutoriais de Infraestrutura, Redes e Segurança
 ### Linux • ISP • Produção
 
+![Linux|157](https://img.shields.io/badge/Linux-Debian%20%7C%20Ubuntu-2b3137?style=flat-square&logo=linux)
+![Foco](https://img.shields.io/badge/Foco-ISP%20%7C%20Produ%C3%A7%C3%A3o-0a7ea4?style=flat-square)
+![Idioma](https://img.shields.io/badge/Idioma-PT--BR-22863a?style=flat-square)
+![Status](https://img.shields.io/badge/Status-Em%20uso%20real-1f6feb?style=flat-square)
+
 ## Sobre este repositório
 
-Este repositório reúne tutoriais técnicos que utilizo e mantenho em **ambientes reais de produção**, principalmente em **Provedores de Internet (ISP)**.
+Criei este repositório para deixar documentado, do jeito mais detalhado que consigo, o que faço no dia a dia com servidores Linux, redes, segurança e infraestrutura, principalmente em cenário de ISP.
 
-Não é um repositório de laboratório, testes acadêmicos ou exemplos “de blog”.
-Os materiais aqui refletem **decisões práticas**, limitações reais e preocupações comuns de quem mantém infraestrutura funcionando todos os dias.
+Ele funciona como consulta para mim e também para quem quiser aproveitar alguma configuração, sequência de comandos ou troubleshooting que eu já precisei resolver antes.
 
-O foco não é apenas *como fazer*, mas **por que fazer dessa forma**, incluindo riscos, trade-offs e cuidados necessários em produção.
+Muita coisa aqui existe por um motivo simples: eu também esqueço. Então prefiro registrar direito, com contexto, ordem de execução e observações práticas, para não precisar toda vez voltar a pesquisar tudo do zero quando precisar repetir algo.
 
----
+## Como esses guias são escritos
 
-## Escopo e princípios
+Os guias daqui tentam ser detalhados porque eu realmente uso esse material como referência de trabalho, não como texto de vitrine.
 
-Este repositório segue alguns princípios claros:
+Uso IA para revisão de escrita, organização e acabamento dos guias.
 
-- Conteúdo voltado para **ambientes reais de produção**
-- Foco em **infraestrutura de ISP e servidores Linux**
-- **Segurança considerada desde o início**, não como correção posterior
-- Preferência por **software livre** e soluções abertas
-- Exemplos reproduzíveis, organizados e testados
-- Explicações técnicas além da simples lista de comandos
+Pode acontecer de algo não funcionar para você exatamente da mesma forma que funcionou no meu cenário, caso opte por replicar em outra distro. Então use os guias como base prática, mas revise e adapte conforme necessário antes de aplicar.
 
----
+## O que você vai encontrar aqui
 
-## Transparência sobre o processo de escrita
-
-Parte do texto utiliza **IA como ferramenta de apoio à escrita, organização e revisão**.
-Todo o conteúdo técnico é **validado manualmente**, testado em ambiente real e ajustado conforme experiência prática.
-
-Nada aqui é publicado “no automático”.
-
----
+Aqui você poderá encontrar guias voltados para ambientes de produção, com foco em Linux. Tenho preferencia por programas livres e de código aberto.
+Também tento deixar os passos bem detalhados, porque muita coisa fica como material de consulta para depois.
 
 ## Índice de tutoriais
 
@@ -57,11 +50,11 @@ Nada aqui é publicado “no automático”.
 
 ### GPU (NVIDIA / CUDA)
 
-| Título | Descrição |
-|------|-----------|
-| [Instalação NVIDIA + CUDA + PRIME](gpu/guia_nvidia_cuda_prime_ubuntu2404.md) | Drivers NVIDIA, CUDA Toolkit e gráficos híbridos no Linux. |
-| [Troubleshooting NVIDIA + CUDA](gpu/guia_nvidia_cuda_troubleshooting_ubuntu2404.md) | Erros comuns e soluções práticas envolvendo NVIDIA e CUDA. |
-| [Recuperar e Manter Driver NVIDIA](gpu/guia_recuperar_driver_nvidia_ubuntu2404.md) | Recuperação de drivers, kernels, Secure Boot e módulos NVIDIA. |
+| Título                                                                              | Descrição                                                      |
+| ----------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| [Instalação NVIDIA + CUDA + PRIME](gpu/guia_nvidia_cuda_prime_ubuntu2404.md)        | Drivers NVIDIA, CUDA Toolkit e gráficos híbridos no Linux.     |
+| [Troubleshooting NVIDIA + CUDA](gpu/guia_nvidia_cuda_troubleshooting_ubuntu2404.md) | Erros comuns e soluções práticas envolvendo NVIDIA e CUDA.     |
+| [Recuperar e Manter Driver NVIDIA](gpu/guia_recuperar_driver_nvidia_ubuntu2404.md)  | Recuperação de drivers, kernels, Secure Boot e módulos NVIDIA. |
 
 ---
 
@@ -98,6 +91,7 @@ Nada aqui é publicado “no automático”.
 |------|-----------|
 | [Cron e Crontab](sistema/guia_cron_crontab.md) | Agendamento de tarefas no Linux. |
 | [Desabilitar Suspensão e Hibernação](sistema/guia_desabilitar_suspensao_hibernacao_debian.md) | Desativação correta de suspensão em servidores e notebooks. |
+| [Flameshot no Ubuntu Wayland iniciando com o sistema](sistema/guia_producao_flameshot_wayland_autostart_ubuntu.md) | Autostart do Flameshot no GNOME com Wayland e uso da tecla Print. |
 | [Formatar Discos no Linux](sistema/guia_formatar_disco_linux.md) | Identificação, particionamento e formatação segura. |
 | [Sincronização com rsync](sistema/guia_rsync_sincronizacao_pastas.md) | Backup e espelhamento de diretórios. |
 | [Fixar Frequência Máxima da CPU](sistema/guia_fixar_frequencia_cpu_debian12.md) | Ajuste de governor para desempenho máximo. |
@@ -115,20 +109,10 @@ Nada aqui é publicado “no automático”.
 
 ---
 
-## Sobre
+## Observação final
 
-Infraestrutura e redes com foco em:
+Esse repositório é público porque, além de me ajudar a manter tudo centralizado e documentado, pode servir para outras pessoas que lidam com problemas parecidos.
 
-- Servidores Linux (Debian/Ubuntu)
-- Ambientes de Provedor de Internet (ISP)
-- Segurança e operação em produção
-
-Este repositório funciona como **caderno técnico público**: problemas reais, soluções testadas.
-
----
-
-## Aviso
-
-Exemplos são genéricos. **Revise e adapte antes de aplicar em produção.**
+Se algum guia te ajudar, ótimo. 
 
 GitHub: https://github.com/PauloNRocha
