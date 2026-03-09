@@ -225,22 +225,41 @@ Causas comuns
 - Kernel diferente daquele para o qual o módulo foi construído.
 
 Como resolver (passo a passo)
-```bash
-# 1) Checar driver instalado
-dpkg -l | grep nvidia-driver
 
-# 2) Garantir headers do kernel atual
+1. Veja qual driver aparece instalado:
+
+```bash
+dpkg -l | grep nvidia-driver
+```
+
+2. Garanta os `headers` do kernel atual:
+
+```bash
 uname -r
 sudo apt install linux-headers-$(uname -r) -y
+```
 
-# 3) Reinstalar o driver proprietário .run e aceitar DKMS
+3. Reinstale o driver `.run` e aceite DKMS:
+
+```bash
 sudo ./NVIDIA-Linux-x86_64-580.82.09.run
+```
 
-# 4) Atualizar initramfs (boa prática)
+4. Atualize o `initramfs`:
+
+```bash
 sudo update-initramfs -u
+```
 
-# 5) Reiniciar e testar
+5. Reinicie:
+
+```bash
 sudo reboot
+```
+
+6. Depois do boot, teste novamente:
+
+```bash
 nvidia-smi
 ```
 
@@ -264,19 +283,30 @@ Como resolver (opções)
 **Opção A — Recomendado para iniciantes:** desativar **Secure Boot** no BIOS/UEFI. Esta é a solução mais simples e direta para resolver o problema de assinatura de módulos.
 
 **Opção B — Assinar o módulo (avançado):** Se você precisa manter o Secure Boot ativo, o caminho é gerar suas próprias chaves e assinar o módulo. Este é um processo mais complexo.
+
+1. Gere o par de chaves:
+
 ```bash
-# Gerar par de chaves para assinar módulos
 openssl req -new -x509 -newkey rsa:2048 -keyout MOK.priv -outform DER -out MOK.der -nodes -days 36500 -subj "/CN=Local NVIDIA Module Signing/"
+```
 
-# Registrar a chave no MOK (pede senha e vai pedir para confirmar no boot)
+2. Registre a chave no MOK:
+
+```bash
 sudo mokutil --import MOK.der
+```
 
-# Reboot e siga o menu "MOK manager" para enrolar (enroll) a chave
+3. Reinicie e siga o menu `MOK manager` para fazer o enrol da chave.
 
-# Assinar o módulo NVIDIA atual
+4. Assine o módulo NVIDIA atual:
+
+```bash
 sudo /usr/src/linux-headers-$(uname -r)/scripts/sign-file sha256 MOK.priv MOK.der $(modinfo -n nvidia)
+```
 
-# Verificar assinatura
+5. Verifique se a assinatura aparece:
+
+```bash
 modinfo nvidia | grep -i signer
 ```
 > Com **DKMS** habilitado, é possível automatizar a assinatura pós-build (fora do escopo do básico).
@@ -293,12 +323,22 @@ Causa provável
 O wrapper `prime-run` é fornecido por pacotes do Ubuntu (por exemplo, `nvidia-prime`). O instalador `.run` da NVIDIA não cria esse atalho.
 
 Como resolver (usar variáveis de ambiente)
+
+1. Teste manualmente a variável de offload:
+
 ```bash
 __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia glxinfo | grep "OpenGL renderer"
 ```
-Crie um **alias** permanente no seu `~/.bashrc`:
+
+2. Se fizer sentido para o seu uso, crie um `alias` permanente no `~/.bashrc`:
+
 ```bash
 echo "alias prime-run='__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia'" >> ~/.bashrc
+```
+
+3. Recarregue o shell:
+
+```bash
 source ~/.bashrc
 ```
 
@@ -314,9 +354,22 @@ Causa provável
 Ferramentas de teste OpenGL não instaladas.
 
 Como resolver
+
+1. Instale o pacote:
+
 ```bash
 sudo apt install mesa-utils -y
+```
+
+2. Teste o renderer padrão:
+
+```bash
 glxinfo | grep "OpenGL renderer"
+```
+
+3. Teste também com `prime-run`:
+
+```bash
 prime-run glxinfo | grep "OpenGL renderer"
 ```
 
@@ -335,25 +388,69 @@ Como resolver (instalar CUDA Toolkit via repositório NVIDIA)
 
 Observação: a versão exata do Toolkit muda com o tempo. Se você precisa de uma versão específica, valide no repositório e na documentação oficial.
 
+1. Baixe o arquivo de pin do repositório:
+
 ```bash
-# Adicionar repo (Ubuntu 24.04)
 wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-ubuntu2404.pin
+```
+
+2. Mova o arquivo para `preferences.d`:
+
+```bash
 sudo mv cuda-ubuntu2404.pin /etc/apt/preferences.d/cuda-repository-pin-600
+```
 
+3. Crie o diretório de keyrings:
+
+```bash
 sudo install -d -m 0755 /etc/apt/keyrings
+```
+
+4. Importe a chave:
+
+```bash
 curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/3bf863cc.pub | sudo gpg --dearmor -o /etc/apt/keyrings/nvidia-cuda.gpg
+```
+
+5. Adicione o repositório:
+
+```bash
 echo "deb [signed-by=/etc/apt/keyrings/nvidia-cuda.gpg] https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/ /" | sudo tee /etc/apt/sources.list.d/cuda-ubuntu2404.list
+```
+
+6. Atualize a lista de pacotes:
+
+```bash
 sudo apt update
+```
 
-# Instalar toolkit (use versão específica apenas se você souber qual precisa)
+7. Instale o toolkit:
+
+```bash
 sudo apt install cuda-toolkit -y
+```
 
-# PATH/LD_LIBRARY_PATH (ajuste se necessário)
+8. Ajuste o `PATH`, se necessário:
+
+```bash
 echo 'export PATH=/usr/local/cuda/bin${PATH:+:${PATH}}' >> ~/.bashrc
-echo 'export LD_LIBRARY_PATH=/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}' >> ~/.bashrc
-source ~/.bashrc
+```
 
-# Testar
+9. Ajuste o `LD_LIBRARY_PATH`, se necessário:
+
+```bash
+echo 'export LD_LIBRARY_PATH=/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}' >> ~/.bashrc
+```
+
+10. Recarregue o shell:
+
+```bash
+source ~/.bashrc
+```
+
+11. Teste:
+
+```bash
 nvcc --version
 ```
 ---
@@ -368,16 +465,34 @@ Causa provável
 Diferença entre **kernel em uso** e **headers instalados**. Isso acontece com frequência após update de kernel: você reinicia, muda o `uname -r`, mas os headers/DKMS ainda não estão alinhados com o kernel atual.
 
 Como resolver
+
+1. Veja o kernel atual:
+
 ```bash
-# Ver o kernel atual
 uname -r
+```
 
-# Instalar headers corretos
+2. Instale os `headers` corretos:
+
+```bash
 sudo apt install linux-headers-$(uname -r) -y
+```
 
-# Reinstalar driver .run (aceitar DKMS)
+3. Reinstale o driver `.run`, atualize o `initramfs` e reinicie:
+
+```bash
 sudo ./NVIDIA-Linux-x86_64-580.82.09.run
+```
+
+4. Atualize o `initramfs`:
+
+```bash
 sudo update-initramfs -u
+```
+
+5. Reinicie:
+
+```bash
 sudo reboot
 ```
 
@@ -408,8 +523,16 @@ Causa provável
 Informacional — o driver pode carregar **dinamicamente** no boot. Nem sempre é necessário embutir no initramfs.
 
 Como resolver (se quiser forçar rebuild)
+
+1. Atualize o `initramfs`:
+
 ```bash
 sudo update-initramfs -u
+```
+
+2. Reinicie:
+
+```bash
 sudo reboot
 ```
 
@@ -444,10 +567,28 @@ dmesg | grep -i nvrm
 ```
 
 ### Testar renderização
+
+1. Instale os utilitários:
+
 ```bash
 sudo apt install mesa-utils vulkan-tools -y
+```
+
+2. Teste OpenGL:
+
+```bash
 glxinfo | grep "OpenGL renderer"
+```
+
+3. Teste OpenGL com offload NVIDIA:
+
+```bash
 __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia glxinfo | grep "OpenGL renderer"
+```
+
+4. Teste Vulkan com `prime-run`:
+
+```bash
 prime-run vulkaninfo | grep "GPU id"
 ```
 
@@ -455,15 +596,35 @@ prime-run vulkaninfo | grep "GPU id"
 
 Observação: `prime-select` e `prime-run` são do ecossistema Ubuntu (pacotes como `nvidia-prime`). Se você instalou tudo via `.run`, isso pode não existir.
 
+1. Para performance:
+
 ```bash
 sudo prime-select nvidia   # performance
+```
+
+2. Para economia:
+
+```bash
 sudo prime-select intel    # economia
+```
+
+3. Para conferir o perfil atual:
+
+```bash
 prime-select query
 ```
 
 ### Alias `prime-run` (se instalou via .run)
+
+1. Crie o `alias`:
+
 ```bash
 echo "alias prime-run='__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia'" >> ~/.bashrc
+```
+
+2. Recarregue o shell:
+
+```bash
 source ~/.bashrc
 ```
 
