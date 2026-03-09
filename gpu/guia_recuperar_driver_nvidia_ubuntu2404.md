@@ -401,34 +401,42 @@ nvcc cuda_test.cu -o cuda_test && ./cuda_test
 3. **DKMS da NVIDIA compila para ESTE kernel?**
    ```bash
    sudo dkms status
-   # Se necessário, limpe e reinstale (ajuste versão):
-   sudo dkms remove -m nvidia -v 580.95.05 --all || true
-   sudo dkms build  -m nvidia -v 580.95.05 -k $(uname -r)
-   sudo dkms install -m nvidia -v 580.95.05 -k $(uname -r)
+   ```
+   Se aparecer algo como `nvidia/<VERSAO_REAL>`, use essa mesma versão nos comandos abaixo.
+
+4. **Se necessário, remover e reconstruir o módulo DKMS**
+   ```bash
+   sudo dkms remove -m nvidia -v <VERSAO_REAL> --all || true
+   sudo dkms build  -m nvidia -v <VERSAO_REAL> -k $(uname -r)
+   sudo dkms install -m nvidia -v <VERSAO_REAL> -k $(uname -r)
    ```
 
-4. **KMS ativo e simpledrm bloqueado?**
+5. **KMS ativo e simpledrm bloqueado?**
    ```bash
    echo "options nvidia-drm modeset=1" | sudo tee /etc/modprobe.d/nvidia-kms.conf
    sudo sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT="/GRUB_CMDLINE_LINUX_DEFAULT="nvidia-drm.modeset=1 modprobe.blacklist=simpledrm /' /etc/default/grub
    sudo update-initramfs -u -k $(uname -r)
    sudo update-grub
-   sudo reboot
    ```
 
-5. **O módulo está no initramfs?**
+6. **O módulo está no initramfs?**
    ```bash
    lsinitramfs /boot/initrd.img-$(uname -r) | grep -E 'nvidia.*\.ko' || echo "NVIDIA não está no initramfs"
    ```
 
-6. **Carregar manualmente e ver logs:**
+7. **Carregar manualmente e ver logs:**
    ```bash
    sudo modprobe -v nvidia nvidia-modeset nvidia-uvm
    sudo modprobe -v nvidia-drm modeset=1
    sudo dmesg -T | tail -n 200 | grep -iE 'nvidia|drm|nouveau'
    ```
 
-7. **Se OEM continuar problemático → migre para genérico:**
+8. **Reiniciar**
+   ```bash
+   sudo reboot
+   ```
+
+9. **Se OEM continuar problemático → migre para genérico:**
    ```bash
    sudo apt install -y linux-generic
    # defina no GRUB conforme seção 2
