@@ -1,6 +1,6 @@
 # BIND 9 no Debian 13 — Master/Slave + TSIG + DNSSEC + IPv4/IPv6 + nftables + Fail2Ban + Registro.br
 
-*Criado em: 08 de janeiro de 2026*
+*Criado em: 08 de janeiro de 2026*  
 *Última atualização em: 30 de janeiro de 2026*
 
 Este guia detalha o processo completo para configurar um par de servidores DNS autoritativos (Master/Slave) usando **BIND9** em um ambiente **Debian 13 (Trixie)**. O foco é em uma implementação de produção, segura e resiliente, cobrindo desde a configuração básica até a proteção avançada com transferência de zona autenticada (**TSIG**), assinatura automática de zonas com **DNSSEC** e defesa ativa contra abusos com **Fail2Ban**.

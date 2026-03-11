@@ -1,6 +1,6 @@
 # Driver NVIDIA no Ubuntu 24.04 — recuperar e manter (passo a passo)
 
-*Criado em: 03 de dezembro de 2025*
+*Criado em: 03 de dezembro de 2025*  
 *Última atualização em: 08 de dezembro de 2025*
 
 Fiz este guia para deixar anotado o processo que costumo seguir quando preciso recuperar o driver da NVIDIA no Ubuntu 24.04 ou evitar quebrar tudo de novo depois de update de kernel, troca de driver ou tentativa de instalação via `.run`.

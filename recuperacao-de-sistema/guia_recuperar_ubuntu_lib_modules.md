@@ -1,11 +1,12 @@
 # Ubuntu — recuperar após apagar `/lib/modules` (guia de emergência)
 
-*Criado em 03 de dezembro de 2025 e atualizado em 08 de dezembro de 2025*
+*Criado em: 03 de dezembro de 2025*  
+*Última atualização em: 08 de dezembro de 2025*
 
-Este tutorial detalha como **recuperar um sistema Ubuntu** que parou de funcionar após a remoção acidental do diretório `/lib/modules`, que armazena módulos e dependências do kernel.
+Fiz este guia para deixar anotado o que fazer quando um Ubuntu para de funcionar depois da remoção acidental do diretório `/lib/modules`, que é onde ficam os módulos e dependências do kernel.
 
 > [!WARNING]
-> **Guia de emergência**: este procedimento é para cenário de desastre. A melhor solução é sempre manter backups. Siga os passos com cuidado para recuperar um sistema que não inicializa corretamente.
+> **Guia de emergência**: isso aqui é para cenário de desastre. O ideal continua sendo ter backup, mas se o sistema já quebrou, este roteiro ajuda a recuperar o boot e reconstruir os módulos do kernel com mais previsibilidade.
 
 ---
 
@@ -45,17 +46,37 @@ Se o sistema ainda inicia no terminal, você pode pular esta parte.
 
 Caso o Ubuntu não inicie:
 1. Inicie o **Live CD/USB** do Ubuntu ("Experimentar sem instalar");
-2. Abra o terminal e monte as partições do sistema:
+2. Abra o terminal;
+3. Monte a partição raiz:
 
 ```bash
-# Lembre-se de substituir /dev/nvme0n1pX pelo seu disco/partição correto
-sudo mount /dev/nvme0n1p2 /mnt      # Partição raiz (exemplo)
-sudo mount /dev/nvme0n1p1 /mnt/boot/efi  # Partição EFI
+sudo mount /dev/nvme0n1p2 /mnt
+```
+
+Exemplo:
+
+- `/dev/nvme0n1p2`: partição raiz
+- `/dev/nvme0n1p1`: partição EFI
+
+4. Monte a partição EFI:
+
+```bash
+sudo mount /dev/nvme0n1p1 /mnt/boot/efi
+```
+
+5. Faça os bind mounts:
+
+```bash
 for i in /dev /dev/pts /proc /sys /run; do sudo mount --bind $i /mnt$i; done
+```
+
+6. Entre no sistema com `chroot`:
+
+```bash
 sudo chroot /mnt
 ```
 
-Agora você está "dentro" do seu sistema instalado e pode executar comandos de reparo.
+Depois disso, os próximos comandos já serão executados dentro do sistema instalado.
 
 ---
 
@@ -97,9 +118,21 @@ sudo apt install linux-modules-extra-$(uname -r) -y
 
 Após reinstalar o kernel, force a recriação das dependências dos módulos e do menu de boot:
 
+1. Recrie as dependências dos módulos:
+
 ```bash
 sudo depmod -a
+```
+
+2. Atualize o `initramfs`:
+
+```bash
 sudo update-initramfs -u -k all
+```
+
+3. Atualize o GRUB:
+
+```bash
 sudo update-grub
 ```
 
@@ -107,29 +140,29 @@ sudo update-grub
 
 <a id="6"></a>
 ## 6. Reiniciar o sistema
-Saia do `chroot` e reinicie:
+
+1. Saia do `chroot`:
+
 ```bash
 exit
+```
+
+2. Reinicie:
+
+```bash
 sudo reboot
 ```
 
 ---
 
-## Referências (fontes para consulta)
-
-### Manpages (referência)
-
-- `chroot(1)`: https://man7.org/linux/man-pages/man1/chroot.1.html
-- `update-initramfs(8)`: https://manpages.debian.org/bookworm/initramfs-tools/update-initramfs.8.en.html
-- `grub-mkconfig(8)`: https://manpages.debian.org/bookworm/grub-common/grub-mkconfig.8.en.html
-
-Durante o boot, se tiver múltiplas opções, escolha o kernel que você acabou de reinstalar. Verifique se o sistema inicializou corretamente:
+Depois do boot, confira se o kernel e os módulos realmente voltaram:
 
 ```bash
 uname -r
 ls /lib/modules/
 ```
-A saída deve exibir o diretório do kernel correspondente, agora restaurado.
+
+Se a recuperação deu certo, a saída deve mostrar novamente o diretório do kernel correspondente.
 
 ---
 
@@ -156,10 +189,16 @@ sudo apt install nvidia-driver-550 -y
 ```
 
 ### Via instalador `.run`:
+
+1. Entre em modo texto e pare a interface gráfica:
+
 ```bash
-# Entre em modo texto (Ctrl+Alt+F3) e pare a interface gráfica
 sudo systemctl isolate multi-user.target
-# Execute o instalador
+```
+
+2. Execute o instalador:
+
+```bash
 sudo ./NVIDIA-Linux-x86_64-580.95.run
 ```
 
@@ -177,22 +216,37 @@ sudo cp -r /lib/modules /backup-modules/
 Se algo quebrar no futuro, você pode restaurá-lo rapidamente:
 ```bash
 sudo rm -rf /lib/modules
+```
+
+```bash
 sudo cp -r /backup-modules /lib/modules
 ```
 
 ---
 
 <a id="10"></a>
-## Verificações finais
+## 10. Verificações finais
 
-### Verifique se o kernel e drivers estão ativos:
+1. Verifique qual kernel carregou:
+
 ```bash
 uname -r
+```
+
+2. Verifique se os módulos NVIDIA estão ativos:
+
+```bash
 lsmod | grep nvidia
+```
+
+3. Verifique o driver:
+
+```bash
 nvidia-smi
 ```
 
-### Verifique se o GRUB reconhece o kernel:
+4. Verifique se o GRUB reconhece o kernel:
+
 ```bash
 sudo grub-mkconfig -o /boot/grub/grub.cfg
 ```
@@ -202,19 +256,20 @@ Se tudo isso funcionar, seu sistema está completamente recuperado.
 ---
 
 <a id="11"></a>
-## Dica final
-> Recomendação: antes de operações de risco (ex.: instalar drivers manualmente), crie um backup rápido dos módulos:
+## 11. Dica final
+> Se eu fosse deixar só uma recomendação prática aqui, seria esta: antes de mexer com driver, kernel ou módulos manualmente, faça um backup rápido de `/lib/modules`:
 > ```bash
 > sudo cp -r /lib/modules /lib/modules.bkp-$(date +%F)
 > ```
-> Assim, qualquer erro pode ser revertido com mais facilidade.
+> Isso não substitui backup de verdade, mas já ajuda muito quando o problema é local e você precisa voltar rápido.
 
 ---
 
 <a id="12"></a>
-### Resumo dos comandos principais
+## 12. Resumo dos comandos principais
+
+Dentro do chroot no Live USB
 ```bash
-# Dentro do chroot no Live USB
 sudo apt update
 sudo apt install --reinstall linux-generic linux-image-generic linux-headers-generic -y
 sudo depmod -a
@@ -225,6 +280,18 @@ sudo reboot
 ```
 
 ---
+
+## Referências (fontes para consulta)
+
+### Manpages (referência)
+
+- `chroot(1)`: https://man7.org/linux/man-pages/man1/chroot.1.html
+- `update-initramfs(8)`: https://manpages.debian.org/bookworm/initramfs-tools/update-initramfs.8.en.html
+- `grub-mkconfig(8)`: https://manpages.debian.org/bookworm/grub-common/grub-mkconfig.8.en.html
+
+---
+
+## Créditos
 
 Autor: Paulo Rocha  
 Repositório: https://github.com/PauloNRocha

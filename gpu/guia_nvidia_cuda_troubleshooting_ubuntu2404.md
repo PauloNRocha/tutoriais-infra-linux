@@ -1,6 +1,6 @@
 # Guia de Produção: Troubleshooting NVIDIA + CUDA no Ubuntu 24.04
 
-*Criado em: 29 de setembro de 2025*
+*Criado em: 29 de setembro de 2025*  
 *Última atualização em: 08 de dezembro de 2025*
 
 Montei este guia para deixar registrado o caminho que costumo seguir quando algo quebra no Ubuntu 24.04 com **driver NVIDIA** e **CUDA**.  
