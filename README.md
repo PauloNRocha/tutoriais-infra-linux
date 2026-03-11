@@ -1,7 +1,7 @@
 # Tutoriais de Infraestrutura, Redes e Segurança
 ### Linux • ISP • Produção
 
-![Linux|157](https://img.shields.io/badge/Linux-Debian%20%7C%20Ubuntu-2b3137?style=flat-square&logo=linux)
+![Linux](https://img.shields.io/badge/Linux-Debian%20%7C%20Ubuntu-2b3137?style=flat-square&logo=linux)
 ![Foco](https://img.shields.io/badge/Foco-ISP%20%7C%20Produ%C3%A7%C3%A3o-0a7ea4?style=flat-square)
 ![Idioma](https://img.shields.io/badge/Idioma-PT--BR-22863a?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-Em%20uso%20real-1f6feb?style=flat-square)
