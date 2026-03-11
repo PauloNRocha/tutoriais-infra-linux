@@ -1,7 +1,7 @@
 # Ubuntu — recuperar após apagar `/lib/modules` (guia de emergência)
 
 *Criado em: 03 de dezembro de 2025*  
-*Última atualização em: 08 de dezembro de 2025*
+*Última atualização em: 11 de março de 2026*
 
 Fiz este guia para deixar anotado o que fazer quando um Ubuntu para de funcionar depois da remoção acidental do diretório `/lib/modules`, que é onde ficam os módulos e dependências do kernel.
 
@@ -251,13 +251,11 @@ nvidia-smi
 sudo grub-mkconfig -o /boot/grub/grub.cfg
 ```
 
-Se tudo isso funcionar, seu sistema está completamente recuperado.
-
 ---
 
 <a id="11"></a>
 ## 11. Dica final
-> Se eu fosse deixar só uma recomendação prática aqui, seria esta: antes de mexer com driver, kernel ou módulos manualmente, faça um backup rápido de `/lib/modules`:
+> Antes de mexer com driver, kernel ou módulos manualmente, faça um backup rápido de `/lib/modules`:
 > ```bash
 > sudo cp -r /lib/modules /lib/modules.bkp-$(date +%F)
 > ```
@@ -268,7 +266,7 @@ Se tudo isso funcionar, seu sistema está completamente recuperado.
 <a id="12"></a>
 ## 12. Resumo dos comandos principais
 
-Dentro do chroot no Live USB
+Dentro do `chroot` no Live USB:
 ```bash
 sudo apt update
 sudo apt install --reinstall linux-generic linux-image-generic linux-headers-generic -y
