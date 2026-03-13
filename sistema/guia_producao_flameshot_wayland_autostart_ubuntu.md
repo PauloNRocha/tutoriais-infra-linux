@@ -1,8 +1,25 @@
-# Guia de Produção — Flameshot no Ubuntu Wayland iniciando com o sistema
+# Guia de Produção: Flameshot no Ubuntu Wayland iniciando com o sistema
 
 *Criado em: 09 de março de 2026*
 
 Esse guia registra a forma que funcionou no meu notebook para fazer o Flameshot iniciar junto com a sessão no Ubuntu com Wayland e também assumir a tecla `Print`. Ele cobre o autostart no usuário, o ajuste do atalho no GNOME e a validação básica do funcionamento. Não é uma receita universal para qualquer ambiente fora de Ubuntu + GNOME + Wayland.
+
+---
+
+## Índice rápido
+
+1. [Cenário](#cenário)
+2. [Ambiente](#ambiente)
+3. [Pré-requisito](#pré-requisito)
+4. [Arquivos usados](#arquivos-usados)
+5. [Implementação](#implementação)
+6. [Configuração da tecla Print](#configuração-da-tecla-print)
+7. [Resultado esperado](#resultado-esperado)
+8. [Validação](#validação)
+9. [Troubleshooting](#troubleshooting)
+10. [Rollback](#rollback)
+11. [Conclusão](#conclusão)
+12. [Créditos](#créditos)
 
 ---
 
