@@ -6,7 +6,7 @@ Resolvi registrar este guia depois de um incidente real em produção. O problem
 
 O objetivo aqui é documentar um procedimento de recuperação para esse cenário. Não é um guia de implantação inicial de BIND ou de DNSSEC. É um roteiro para quando a zona já existe, usa `inline-signing` e para de carregar.
 
-Veja como implantar o BIND9: [guia_producao_bind9_debian13.md](./guia_producao_bind9_debian13.md)
+Veja como implantar o BIND9: [guia de produção do BIND9 no Debian 13](./guia_producao_bind9_debian13.md)
 
 Nos exemplos abaixo, vou usar um domínio fictício para facilitar reaproveitamento:
 
