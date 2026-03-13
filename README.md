@@ -44,6 +44,7 @@ Também tento deixar os passos bem detalhados, porque muita coisa depois vira co
 |------|-----------|
 | [Bloqueio de Sites com BIND9 e RPZ](dns/guia_bind9_rpz_bloqueio_dns.md) | Bloqueio de domínios via DNS utilizando RPZ no BIND9. |
 | [BIND9 no Debian 13 (Master/Slave, TSIG, DNSSEC, Fail2Ban)](dns/guia_producao_bind9_debian13.md) | Implantação de DNS autoritativo em produção com foco em segurança e disponibilidade. |
+| [Recuperação de zona BIND9 com DNSSEC após erro de sintaxe](dns/guia_producao_bind9_recuperacao_zona_dnssec.md) | Procedimento de recuperação após SERVFAIL em zona assinada, com impacto em DKIM/DMARC. |
 | [Unbound no Debian 13 (DNS Recursivo para ISP)](dns/guia_producao_unbound_debian13.md) | Servidor DNS recursivo para provedores, com DNSSEC, RPZ e hardening. |
 
 ---
