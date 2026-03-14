@@ -1,12 +1,14 @@
-# Guia Prático de Bloqueio de Sites com BIND9 e RPZ (Response Policy Zones)
+# Guia de Produção: Bloqueio de Sites com BIND9 e RPZ
 
-*Criado em 04 de dezembro de 2025*
+*Criado em: 04 de dezembro de 2025*  
+*Última atualização em: 14 de março de 2026*
 
-Este guia mostra como configurar um filtro de DNS usando **Response Policy Zones (RPZ)** no BIND9 para bloquear domínios maliciosos ou indesejados.
+Montei este guia para deixar documentado um jeito simples e controlado de usar **RPZ (Response Policy Zones)** no BIND9 para bloquear domínios maliciosos ou indesejados. A ideia aqui não é cobrir implantação completa do BIND, e sim a parte prática de criar uma zona de política, aplicar bloqueios e validar se o filtro realmente entrou em funcionamento.
 
-**Pré-requisito:** Você já deve ter um servidor BIND9 instalado e funcionando como um servidor de DNS recursivo para sua rede.
+Pré-requisito:
 
-Se você quer uma implantação completa (produção) do BIND9 no Debian 13, veja: **[BIND 9 no Debian 13 — Master/Slave + TSIG + DNSSEC](../dns/guia_producao_bind9_debian13.md)**.
+- você já deve ter um servidor BIND9 instalado e funcionando como servidor DNS recursivo para sua rede.
+- se quiser a implantação completa do BIND9 em produção, veja: [guia de produção do BIND9 no Debian 13](./guia_producao_bind9_debian13.md)
 
 ---
 
@@ -22,13 +24,19 @@ Se você quer uma implantação completa (produção) do BIND9 no Debian 13, vej
 
 <a id="1"></a>
 ## 1. O que é RPZ?
-De forma simples, RPZ é uma "lista de exceções" para o seu DNS. Quando um cliente consulta um domínio que está na sua lista de RPZ, em vez de buscar o endereço real na internet, o BIND9 responde com a "punição" que você definiu: pode ser um erro de "não encontrado" (`NXDOMAIN`), o IP de uma página de aviso, ou outra ação.
+
+De forma simples, RPZ funciona como uma camada de política em cima da recursão DNS. Quando um cliente consulta um domínio que está na sua lista de bloqueio, o BIND não devolve a resposta real da internet. Em vez disso, ele devolve a ação que você definiu:
+
+- `NXDOMAIN`, como se o domínio não existisse;
+- um endereço IP interno, se você quiser redirecionar para página de aviso;
+- ou outra política suportada pelo RPZ.
 
 ---
 
 <a id="2"></a>
 ## 2. Passo 1: Habilitar a Response Policy no BIND9
-A primeira coisa a fazer é dizer ao BIND9 para usar a nossa futura zona de bloqueio.
+
+A primeira coisa a fazer é dizer ao BIND para usar a zona de bloqueio que você vai criar.
 
 Edite o arquivo de opções principal do BIND:
 ```bash
@@ -48,13 +56,15 @@ options {
     // ... restante das suas opções ...
 };
 ```
+
 Isso habilita a Response Policy e usa a zona `rpz.local` como fonte das regras.
 
 ---
 
 <a id="3"></a>
 ## 3. Passo 2: Declarar a nossa Zona de Bloqueio
-Agora, precisamos dizer ao BIND onde encontrar os arquivos dessa zona `rpz.local`.
+
+Agora o BIND precisa saber onde está o arquivo da zona `rpz.local`.
 
 Edite o arquivo de zonas locais:
 ```bash
@@ -69,15 +79,19 @@ zone "rpz.local" {
     allow-query { localhost; }; // Apenas o servidor precisa consultar isso
 };
 ```
-- `type master`: Estamos criando as regras nesta máquina.
-- `file "/etc/bind/db.rpz.local"`: Este é o arquivo que conterá a nossa "lista negra" de domínios.
-- `allow-query { localhost; }`: Medida de segurança. Ninguém de fora precisa consultar essa zona diretamente.
+
+O que esse bloco faz:
+
+- `type master`: a política será mantida localmente nesta máquina;
+- `file "/etc/bind/db.rpz.local"`: define o arquivo onde ficarão as regras;
+- `allow-query { localhost; }`: evita consulta direta da zona RPZ por clientes externos.
 
 ---
 
 <a id="4"></a>
 ## 4. Passo 3: Criar o Arquivo da Lista de Bloqueio
-Este é o coração do nosso sistema. Vamos criar o arquivo que definimos no passo anterior e adicionar as regras de bloqueio.
+
+Aqui fica a parte principal da política. É nesse arquivo que você vai colocar os domínios que quer bloquear ou redirecionar.
 
 ```bash
 sudo nano /etc/bind/db.rpz.local
@@ -113,7 +127,7 @@ site-de-phishing.org    A       192.168.1.100
 *.site-de-phishing.org  A       192.168.1.100
 ```
 
-**Explicação das regras:**
+Explicação das regras:
 - `CNAME .`: Esta é a "punição" padrão do RPZ para um bloqueio total. Ela instrui o BIND a responder com `NXDOMAIN`, que para o usuário final é como se o site não existisse. É a forma mais limpa de bloquear.
 - `A 192.168.1.100`: Esta regra responde com um registro `A` (um endereço IPv4). Você pode usar isso para redirecionar o usuário para um servidor web interno que exibe uma mensagem de "Acesso bloqueado".
 
@@ -121,7 +135,8 @@ site-de-phishing.org    A       192.168.1.100
 
 <a id="5"></a>
 ## 5. Passo 4: Validar e Aplicar as Configurações
-Antes de reiniciar o serviço, é crucial verificar se não cometemos nenhum erro de sintaxe.
+
+Antes de recarregar o serviço, vale validar tudo com calma para não colocar erro de sintaxe na produção.
 
 ```bash
 # Verificar a sintaxe dos arquivos de configuração
@@ -140,27 +155,30 @@ sudo systemctl reload bind9
 
 <a id="6"></a>
 ## 6. Passo 5: Testando o Bloqueio
-Agora, a prova final. De uma máquina cliente que usa este servidor DNS, ou do próprio servidor, vamos usar o comando `dig`.
 
-**Teste 1: Domínio bloqueado**
+Agora vem a parte que realmente interessa: confirmar se a política entrou em funcionamento.
+
+### Teste 1: domínio bloqueado
 ```bash
 dig site-malicioso.com
 ```
 A resposta deve ser `status: NXDOMAIN`.
 
-**Teste 2: Domínio redirecionado**
+### Teste 2: domínio redirecionado
 ```bash
 dig site-de-phishing.org
 ```
 A resposta deve mostrar que o `ANSWER SECTION` contém o registro `A` apontando para `192.168.1.100`.
 
-**Teste 3: Domínio normal**
+### Teste 3: domínio normal
 ```bash
 dig www.google.com
 ```
 A resposta deve ser a normal, com os IPs do Google. Isso prova que não quebramos a resolução de nomes legítima.
 
-Com isso, seu filtro de DNS está ativo e funcionando. Agora é só adicionar mais domínios ao arquivo `db.rpz.local` conforme a necessidade e recarregar o serviço (`sudo systemctl reload bind9`).
+Se esses três testes passarem, o RPZ entrou no ar do jeito esperado.
+
+Para adicionar novos domínios depois, basta editar o `db.rpz.local`, validar de novo com `named-checkzone` e recarregar o serviço.
 
 ---
 
@@ -177,6 +195,8 @@ Com isso, seu filtro de DNS está ativo e funcionando. Agora é só adicionar ma
 - `named-checkzone(1)`: https://manpages.debian.org/trixie/bind9-utils/named-checkzone.1.en.html
 
 ---
+
+## Créditos
 
 Autor: Paulo Rocha  
 Repositório: https://github.com/PauloNRocha
