@@ -1,12 +1,14 @@
 # Guia de Produção: Acesso SSH por chave pública (porta customizada) em servidores Linux
 
-*Criado em: 30 de janeiro de 2026*
+*Criado em: 30 de janeiro de 2026*  
 
-Este guia padroniza acesso SSH por **chave pública** em produção: **múltiplos servidores Linux**, **porta SSH customizada**, **login somente por chave** (sem senha) e acesso com **usuário comum + sudo** (sem login direto como `root`). A ideia é operação previsível: saber **qual chave** está sendo usada em cada acesso e reduzir o risco de se trancar fora durante ajustes de segurança.
+Montei este guia para deixar registrado um padrão de acesso SSH por **chave pública** em produção: **múltiplos servidores Linux**, **porta customizada**, **login somente por chave** e acesso com **usuário comum + sudo**, sem login direto como `root`.
+
+O foco aqui é deixar o acesso previsível e fácil de manter: saber **qual chave** está sendo usada, reduzir risco de lockout durante endurecimento do SSH e evitar bagunça quando existe mais de um servidor ou mais de uma identidade no cliente.
 
 ---
 
-## Índice
+## Índice rápido
 1. [Conceito](#1)
 2. [Por que não reutilizar a chave do GitHub](#2)
 3. [Preparação no cliente](#3)
@@ -21,7 +23,7 @@ Este guia padroniza acesso SSH por **chave pública** em produção: **múltiplo
 ---
 
 <a id="1"></a>
-## 1) Conceito de forma resumida
+## 1) Conceito
 
 No SSH por chave, você tem:
 
@@ -346,7 +348,7 @@ Exemplo mental:
   - chave privada diferente de `600`
   - `authorized_keys` diferente de `600`
 - Criar alias genérico tipo `alias servidor=...` vira armadilha operacional com múltiplos ambientes.
-- Logar diretamente como `root`,use usuário comum + sudo.
+- Logar diretamente como `root`, use usuário comum + sudo.
 
 ---
 
