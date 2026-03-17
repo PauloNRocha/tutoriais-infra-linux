@@ -1,8 +1,11 @@
-# Guia de Acesso Remoto Gráfico no Debian 12 (XRDP, AnyDesk, TeamViewer)
+# Guia de Produção: Acesso Remoto Gráfico no Debian 12 (XRDP, AnyDesk, TeamViewer)
 
-*Criado em 04 de dezembro de 2025 e atualizado em 30 de janeiro de 2026*
+*Criado em: 04 de dezembro de 2025*  
+*Última atualização em: 14 de março de 2026*
 
-Este guia mostra como configurar acesso remoto gráfico em um servidor Debian 12, permitindo acesso por interface gráfica de forma semelhante ao que se faz em servidores Windows. O conteúdo cobre instalação e configuração de **XRDP**, **AnyDesk** e **TeamViewer**, além de soluções para problemas comuns.
+Fiz este guia para deixar registrado um caminho prático de acesso remoto gráfico em servidor Debian 12, quando SSH sozinho não resolve e eu realmente preciso entrar em interface gráfica. O conteúdo cobre **XRDP**, **AnyDesk** e **TeamViewer**, além de alguns problemas comuns que costumam aparecer nesse tipo de cenário.
+
+Ele não é um guia de acesso remoto seguro exposto para Internet do zero. O foco aqui é instalação, uso controlado e troubleshooting.
 
 ---
 
@@ -18,7 +21,7 @@ Este guia mostra como configurar acesso remoto gráfico em um servidor Debian 12
 ## 1. Checklist de Segurança Essencial
 Antes de expor qualquer serviço de acesso remoto à internet, siga estas recomendações:
 
-- **Use um Firewall:** Ative e configure um firewall como o `UFW` para permitir acesso apenas de IPs conhecidos ou, no mínimo, apenas na porta que você vai usar (ex: porta `3389` para RDP).
+- **Use um Firewall:** Libere apenas os IPs necessários ou, no mínimo, apenas a porta que você realmente vai usar (ex.: `3389/tcp` para XRDP).
 - **Senhas Fortes:** Todos os usuários que podem logar remotamente devem ter senhas fortes e únicas.
 - **Usuários Não-Root:** Evite logar diretamente com o usuário `root`. Use um usuário padrão e utilize `sudo` quando precisar de privilégios elevados.
 - **Mantenha o Sistema Atualizado:** Aplique atualizações de segurança regularmente com `sudo apt update && sudo apt upgrade`.
@@ -35,30 +38,54 @@ Para que o XRDP e outras ferramentas gráficas funcionem, é preciso instalar um
 
 ### 2.2 Instalar Ambiente Gráfico Leve (XFCE)
 Recomendação: **XFCE** (leve e adequado para servidores com poucos recursos).
+
+1. Atualize a lista de pacotes:
+
 ```bash
 sudo apt update
+```
+
+2. Instale o XFCE:
+
+```bash
 sudo apt install xfce4 xfce4-goodies -y
 ```
 
 ### 2.3 Instalar e Configurar o XRDP
-```bash
-# Instalar o serviço
-sudo apt install xrdp -y
 
-# Dizer ao XRDP para usar a sessão XFCE
+1. Instale o serviço:
+
+```bash
+sudo apt install xrdp -y
+```
+
+2. Ajuste a sessão padrão para usar XFCE:
+
+```bash
 echo "startxfce4" | sudo tee /etc/skel/.xsession
 echo "startxfce4" | sudo tee ~/.xsession
+```
 
-# Abrir a porta no firewall (se estiver usando UFW)
-sudo ufw allow 3389/tcp
+3. Se o servidor usa `nftables`, uma liberação mínima para teste ficaria assim:
 
-# Reiniciar o serviço para aplicar as configurações
+```bash
+nft add rule inet filtro input tcp dport 3389 counter accept
+```
+
+4. Reinicie o serviço:
+
+```bash
 sudo systemctl restart xrdp
 ```
 
+Observação:
+
+- se você já tiver uma policy `drop`, não adicione essa regra sem ajustar também a origem permitida;
+- em ambiente de produção, o ideal é restringir `3389/tcp` por IP ou rede de gestão, não liberar geral.
+
 ### 2.4 Solução de Problemas do XRDP
 - **Conflito de Sessões:** Para evitar problemas ao logar com o mesmo usuário local e remotamente, a recomendação é **usar um usuário dedicado para o acesso remoto**.
-- **Erro "Could not start log":** Geralmente é um problema de permissão. Execute os seguintes comandos para corrigir:
+- **Erro "Could not start log":** Geralmente é um problema de permissão. Execute os seguintes comandos para corrigir, caso receba a mensagem:
   ```bash
   sudo chown xrdp:xrdp /var/log/xrdp.log
   sudo chmod 640 /var/log/xrdp.log
@@ -74,24 +101,39 @@ Estas ferramentas são mais fáceis de configurar, pois fazem a "ponte" através
 > **Nota sobre Versões:** Os links de download e métodos de instalação podem mudar. Se os comandos abaixo falharem, sempre consulte o site oficial do AnyDesk ou TeamViewer para obter as instruções mais recentes.
 
 ### 3.1 Instalar AnyDesk
-```bash
-# Baixar a chave de repositório e adicionar
-wget -qO - https://keys.anydesk.com/repos/DEB-GPG-KEY | sudo apt-key add -
-echo "deb http://deb.anydesk.com/ all main" | sudo tee /etc/apt/sources.list.d/anydesk-stable.list
 
-# Instalar
-sudo apt update
-sudo apt install anydesk -y
+1. Baixe o pacote `.deb` apropriado no site oficial do AnyDesk.
+
+```bash
+cd /tmp
+wget https://download.anydesk.com/linux/anydesk_8.0.0-1_amd64.deb
 ```
-Após a instalação, execute `anydesk` no terminal para iniciar e obter seu ID de conexão.
+
+2. Instale com o `apt`:
+
+```bash
+sudo apt install ./anydesk_8.0.0-1_amd64.deb -y
+```
+
+Depois da instalação, execute `anydesk` no terminal para iniciar e obter o ID de conexão.
+
+Observação:
+
+- o uso de `apt-key` foi removido deste guia porque essa abordagem está obsoleta;
+- se a versão do pacote mudar no site oficial, ajuste o nome do arquivo baixado antes de instalar.
 
 ### 3.2 Instalar TeamViewer
+
+1. Entre em `/tmp` e baixe o pacote:
+
 ```bash
-# Baixar o pacote .deb para a pasta /tmp
 cd /tmp
 wget https://download.teamviewer.com/download/linux/teamviewer_amd64.deb
+```
 
-# Instalar o pacote e suas dependências
+2. Instale o pacote:
+
+```bash
 sudo apt install ./teamviewer_amd64.deb -y
 ```
 Após a instalação, execute `teamviewer` para configurar o acesso.
@@ -116,10 +158,11 @@ Se suas máquinas virtuais (Virt-Manager, etc.) são encerradas ao iniciar uma s
 
 ---
 
-### Conclusão
-Configurar acesso remoto gráfico é simples, mas exige cuidado com segurança. Em servidores expostos à internet, a recomendação é usar **acesso via SSH** como método principal e habilitar acesso gráfico apenas quando necessário, preferencialmente protegido por firewall ou VPN.
+## Conclusão
 
-Veja também: [Guia de Produção: Acesso SSH por chave pública (porta customizada) em servidores Linux](guia_producao_ssh_chave_publica_linux.md)
+Esse tipo de acesso ajuda bastante em manutenção pontual, mas eu ainda trataria SSH como método principal e deixaria acesso gráfico só para quando realmente fizer sentido. Se for expor isso fora da rede local, o mínimo é colocar por trás de firewall e, de preferência, VPN.
+
+Veja também: [guia de produção de acesso SSH por chave pública](./guia_producao_ssh_chave_publica_linux.md)
 
 ---
 
@@ -144,6 +187,8 @@ Veja também: [Guia de Produção: Acesso SSH por chave pública (porta customiz
 - `ufw(8)` (manpage Debian): https://manpages.debian.org/bookworm/ufw/ufw.8.en.html
 
 ---
+
+## Créditos
 
 Autor: Paulo Rocha  
 Repositório: https://github.com/PauloNRocha
