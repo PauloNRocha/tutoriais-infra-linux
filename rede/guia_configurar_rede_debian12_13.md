@@ -1,10 +1,17 @@
-# Configuração de Rede – Debian 12 (Ethernet)
+# Guia de Produção: Configuração de Rede no Debian 12/13 (Ethernet)
 
-*Criado em 29 de setembro de 2025 e atualizado em 08 de dezembro de 2025*
+*Criado em: 29 de setembro de 2025*  
+*Última atualização em: 17 de março de 2026*
 
-Neste guia, vamos configurar interfaces de rede com fio no **Debian 12 (Bookworm)** de forma estável e previsível, usando `ifupdown` e nomes de interface consistentes. Ele funciona bem para servidores e desktops. Se você usa Desktop com NetworkManager, veja a seção 4.
+Montei este guia para deixar registrado um jeito estável e previsível de configurar rede cabeada no **Debian 12/13**. O foco principal aqui é `ifupdown`, mas o guia também traz alternativa com `NetworkManager` e alguns cenários mais avançados para quando o básico já estiver funcionando.
 
-Veja também: [Configuração de Wi‑Fi – Debian 12](../rede/guia_configurar_wifi_debian12.md).
+Observação prática:
+
+- em teste rápido em uma VM Debian 13 mínima, `ifupdown` continuou funcionando como esperado;
+- já o `NetworkManager` precisou ser instalado manualmente;
+- e a interface só passou para o `NM` quando deixou de ser declarada em `/etc/network/interfaces`.
+
+Veja também: [guia de configuração de Wi-Fi no Debian 12](./guia_configurar_wifi_debian12.md)
 
 ---
 
@@ -12,20 +19,19 @@ Veja também: [Configuração de Wi‑Fi – Debian 12](../rede/guia_configurar_
 1. [Pré-requisitos e Escopo](#1)
 2. [Começo Rápido (DHCP)](#2)
 3. [Instalar ferramentas necessárias](#3)
-4. [Identificar a interface e MAC](#4)
+4. [Identificar a interface, IP e MAC](#4)
 5. [Configurar Ethernet para subir no boot (ifupdown)](#5)
 6. [NetworkManager (nmcli) — alternativa ao ifupdown](#6)
 7. [Desativar Wake-on-LAN (WOL)](#7)
 8. [(Opcional) Renomear a interface para `eth0`](#8)
 9. [Checklist pós-reboot](#9)
-10. [Resumo](#10)
-11. [Avançado (opcional)](#11)
-12. [Solução de Problemas](#12)
+10. [Avançado (opcional)](#10)
+11. [Solução de Problemas](#11)
 
 ---
 
 <a id="1"></a>
-## Pré-requisitos e Escopo
+## 1. Pré-requisitos e escopo
 
 - Acesso com privilégios de administrador (`sudo`).  
 - Ambiente alvo: servidores/notebooks com interface Ethernet.  
@@ -34,18 +40,21 @@ Veja também: [Configuração de Wi‑Fi – Debian 12](../rede/guia_configurar_
   - `NetworkManager` (NM) → preferível em desktops; há seção alternativa com `nmcli`.
   - `systemd-networkd` → opção moderna para servidores; seção opcional ao final.
 
-Recomendação: para servidor, usar `ifupdown` ou `systemd-networkd`. Para desktop, `NetworkManager`.
+Na prática:
+
+- para servidor, eu começaria com `ifupdown` ou `systemd-networkd`;
+- para desktop, faz mais sentido usar `NetworkManager`.
 
 ---
 
 <a id="2"></a>
-## Começo Rápido (DHCP com `ifupdown`)
+## 2. Começo rápido (DHCP com `ifupdown`)
 
 Para quem precisa apenas conectar a rede com fio via DHCP rapidamente.
 
 1.  **Identifique a interface:**
     ```bash
-    ip -br link
+    ip -br a
     # Anote o nome, ex: enp2s0
     ```
 
@@ -70,12 +79,12 @@ Para quem precisa apenas conectar a rede com fio via DHCP rapidamente.
     - **Testar conectividade com a internet:** `ping -c 3 8.8.8.8`
     - **Se algo falhou, veja os logs:** `journalctl -u networking.service -n 50 --no-pager`
 
-Se a conexão via DHCP funcionar, prossiga para o guia completo abaixo (IP fixo, WOL, etc.).
+
 
 ---
 
 <a id="3"></a>
-## 1. Instalar ferramentas necessárias
+## 3. Instalar ferramentas necessárias
 
 ```bash
 sudo apt update
@@ -89,40 +98,69 @@ sudo apt install -y ifupdown net-tools ethtool
 ---
 
 <a id="4"></a>
-## 2. Identificar a interface e MAC
+## 4. Identificar a interface, IP e MAC
 
 ```bash
-ip -br link
+ip -br a
 ```
 
 Exemplo de saída:
 
 ```
-enp2s0           DOWN   00:1a:2b:3c:4d:5e
+enp2s0           UP     192.168.1.20/24
+```
+
+Esse comando é o melhor para bater o olho e descobrir:
+
+- nome da interface;
+- estado (`UP`/`DOWN`);
+- IPs atribuídos.
+
+Para ver o MAC de forma resumida:
+
+```bash
+ip -br link
+```
+
+Exemplo:
+
+```
+enp2s0           UP             00:1a:2b:3c:4d:5e
 ```
 
 Interface: `enp2s0`  
 MAC: `00:1a:2b:3c:4d:5e`
 
-Para detalhes:
+Se quiser ver os detalhes completos de uma interface específica:
 ```bash
 ip link show enp2s0
+```
+
+Se quiser ver a listagem completa de todas as interfaces do host:
+
+```bash
+ip a
 ```
 
 ---
 
 <a id="5"></a>
-## 3. Configurar Ethernet para subir no boot (ifupdown)
+## 5. Configurar Ethernet para subir no boot (ifupdown)
 
-Este guia assume que a interface será gerenciada pelo `ifupdown` (não pelo NetworkManager).
+Aqui a ideia é deixar essa interface sob controle do `ifupdown`, não do `NetworkManager`.
 
-1) Faça backup e edite o arquivo:
+1) Faça backup do arquivo:
 ```bash
 sudo cp /etc/network/interfaces /etc/network/interfaces.bak
+```
+
+2) Edite o arquivo:
+
+```bash
 sudo nano /etc/network/interfaces
 ```
 
-2) Escolha UMA das opções abaixo (ajuste `enp2s0` e o IP conforme necessário):
+3) Escolha UMA das opções abaixo (ajuste `enp2s0` e o IP conforme necessário):
 
 ### Opção A — DHCP (IP via servidor)
 ```ini
@@ -139,15 +177,18 @@ iface enp2s0 inet static
     gateway 192.168.1.1
     dns-nameservers 1.1.1.1 8.8.8.8
 ```
-```
 
-3) Aplicar sem reboot:
+4) Aplicar sem reboot:
 ```bash
-sudo ifdown enp2s0 || true
 sudo ifup enp2s0
 ```
 
-💡 Usa Desktop com NetworkManager? Ou desative o gerenciamento dessa interface pelo NM, ou configure tudo via `nmcli` (ex.: `nmcli con mod ...`). Misturar NM e ifupdown na mesma interface causa conflito.
+Se você usa Desktop com `NetworkManager`, faça uma escolha:
+
+- ou deixa essa interface fora do `NM`;
+- ou configura tudo via `nmcli`.
+
+Misturar `NetworkManager` e `ifupdown` na mesma interface costuma virar conflito.
 
 ### IPv6 com ifupdown
 
@@ -180,7 +221,7 @@ iface enp2s0 inet static
     gateway 192.168.1.1
     # rota estática extra
     post-up ip route add 10.10.0.0/16 via 192.168.1.254 dev enp2s0
-    pre-down ip route del 10.10.0.0/16 via 192.168.1.254 dev enp2s0 || true
+    pre-down ip route del 10.10.0.0/16 via 192.168.1.254 dev enp2s0
 
 iface enp2s0 inet6 static
     address 2001:db8:1234::10
@@ -188,7 +229,7 @@ iface enp2s0 inet6 static
     gateway 2001:db8:1234::1
     # rota IPv6 extra
     post-up ip -6 route add 2001:db8:abcd::/48 via 2001:db8:1234::fe dev enp2s0
-    pre-down ip -6 route del 2001:db8:abcd::/48 via 2001:db8:1234::fe dev enp2s0 || true
+    pre-down ip -6 route del 2001:db8:abcd::/48 via 2001:db8:1234::fe dev enp2s0
 ```
 
 ### Reiniciar serviço (cautela)
@@ -201,9 +242,17 @@ Preferir `ifdown/ifup` da interface específica quando possível, para evitar qu
 ---
 
 <a id="6"></a>
-## 4. 🧭 NetworkManager (nmcli) — alternativa ao ifupdown
+## 6. NetworkManager (nmcli) — alternativa ao ifupdown
 
 Use esta opção em ambientes Desktop ou quando já utiliza NM. Não misture NM e ifupdown na mesma interface.
+
+### Instalar o NetworkManager, se necessário
+
+Em instalação mínima do Debian, o `nmcli` pode não existir ainda.
+
+```bash
+sudo apt install network-manager -y
+```
 
 ### DHCP (IPv4) + SLAAC (IPv6)
 ```bash
@@ -232,22 +281,27 @@ nmcli con mod lan-static 802-3-ethernet.mtu 9000
 nmcli con mod lan-static 802-3-ethernet.wake-on-lan ignore
 ```
 
-### Tornar interface “unmanaged” pelo NM (persistente)
-Edite o arquivo de configuração:
-```ini
-sudo nano /etc/NetworkManager/NetworkManager.conf
+### Se a interface ainda estiver no `/etc/network/interfaces`
+
+Se a interface estiver declarada em `/etc/network/interfaces`, o `NetworkManager` normalmente não vai assumir o controle dela.
+
+Edite o arquivo:
+```bash
+sudo nano /etc/network/interfaces
 ```
-Conteúdo (exemplo):
+
+Remova ou comente o bloco da interface que você quer passar para o `NM`.
+
+Depois reinicie o `NetworkManager`:
+
+```bash
+sudo systemctl restart NetworkManager
 ```
-[keyfile]
-unmanaged-devices=interface-name:enp2s0
-```
-Depois reinicie o NM: `sudo systemctl restart NetworkManager`.
 
 ---
 
 <a id="7"></a>
-## 5. 🛑 Desativar Wake-on-LAN (WOL)
+## 7. Desativar Wake-on-LAN (WOL)
 
 Verificar WOL atual:
 ```bash
@@ -259,12 +313,12 @@ Desativar (sessão atual):
 sudo ethtool -s enp2s0 wol d
 ```
 
-Tornar persistente com udev (recomendado):
+Crie o arquivo `/etc/udev/rules.d/70-disable-wol.rules` e ajuste o MAC:
 ```bash
 sudo nano /etc/udev/rules.d/70-disable-wol.rules
 ```
-Conteúdo (substitua o MAC):
-```
+Cole o conteúdo abaixo:
+```text
 ACTION=="add", SUBSYSTEM=="net", ATTR{address}=="00:1a:2b:3c:4d:5e", RUN+="/usr/sbin/ethtool -s %k wol d"
 ```
 
@@ -281,18 +335,18 @@ pre-up /usr/sbin/ethtool -s enp2s0 wol d
 ---
 
 <a id="8"></a>
-## 6. 🏷️ (Opcional) Renomear a interface para `eth0`
+## 8. (Opcional) Renomear a interface para `eth0`
 
 O Debian 12 usa nomes previsíveis (ex.: `enp2s0`). Se preferir `eth0`, use um arquivo `.link` do systemd (método suportado e atual):
 
 1) Anote o MAC da interface (ex.: `00:1a:2b:3c:4d:5e`).
 
-2) Crie o link file:
+2) Crie o arquivo `/etc/systemd/network/10-eth0.link`:
 ```bash
 sudo nano /etc/systemd/network/10-eth0.link
 ```
-Conteúdo:
-```
+Cole o conteúdo abaixo:
+```ini
 [Match]
 MACAddress=00:1a:2b:3c:4d:5e
 
@@ -300,25 +354,36 @@ MACAddress=00:1a:2b:3c:4d:5e
 Name=eth0
 ```
 
- 
+3) Se você usa `ifupdown`, edite também o `/etc/network/interfaces` antes do reboot e troque `enp2s0` por `eth0`:
 
-3) Reboot para aplicar a renomeação:
+```bash
+sudo nano /etc/network/interfaces
+```
+
+4) Reinicie para aplicar a renomeação:
 ```bash
 sudo reboot
 ```
 
-4) Após o reboot, ajuste `/etc/network/interfaces` para usar `eth0` no lugar de `enp2s0` e reative a interface, se necessário:
+5) Depois do reboot, confirme se a interface apareceu com o nome novo:
 ```bash
-sudo ifdown eth0 || true
+ip -br a
+```
+
+6) Se a interface não subir sozinha e você já tiver ajustado o `/etc/network/interfaces`, use:
+
+```bash
 sudo ifup eth0
 ```
 
-⚠️ Se você usa NetworkManager, a renomeação pode exigir que a conexão do NM seja recriada ou renomeada.
+Se aparecer `ifup: unknown interface eth0`, o `ifupdown` ainda não conhece esse nome novo no `/etc/network/interfaces`.
+
+Se você usa `NetworkManager`, a renomeação pode exigir recriar ou renomear a conexão no `NM`.
 
 ---
 
 <a id="9"></a>
-## 7. ✅ Checklist pós-reboot
+## 9. Checklist pós-reboot
 
 - `ip -br a` → deve listar `eth0` (se renomeado) ou `enp2s0`.  
 - Interface em estado **UP** com o IP esperado.  
@@ -335,132 +400,158 @@ sudo ifup eth0
 ---
 
 <a id="10"></a>
-## 8. 🚀 Resumo
+## 10. Avançado (opcional)
 
-- Interface configurada para subir no boot via `ifupdown`.  
-- Ferramentas instaladas (`ifupdown`, `net-tools`, `ethtool`).  
-- WOL desativado de forma persistente.  
-- (Opcional) Nome padronizado `eth0` via `.link`.  
-- IP fixo quando necessário.
+As seções abaixo cobrem cenários mais avançados. Trate esta parte como **referência técnica**, não como sequência cega para copiar e colar em produção.
 
----
+Qualquer mudança envolvendo:
 
-<a id="11"></a>
-## 9. 🧠 Avançado (opcional)
+- roteamento;
+- renomeação de interface;
+- troca de gerenciador de rede;
 
-As seções abaixo cobrem cenários mais avançados. Use apenas se fizer sentido no seu ambiente.
+precisa ser testada antes em VM, snapshot ou console.
 
 ### DNS e `/etc/resolv.conf`
 
-- A diretiva `dns-nameservers` no `/etc/network/interfaces` funciona quando o pacote `resolvconf` está presente.  
-- Se não surtir efeito, edite manualmente `/etc/resolv.conf` ou configure o `systemd-resolved`.
+No Debian, o comportamento do DNS depende de quem está gerenciando o `/etc/resolv.conf`.
 
-Exemplo de `/etc/resolv.conf` simples:
-Comando:
+Antes de editar, verifique:
+
+```bash
+ls -l /etc/resolv.conf
+```
+
+Possíveis cenários:
+
+- arquivo estático: pode editar manualmente;
+- symlink para `systemd-resolved`: gerenciado automaticamente;
+- sobrescrito por DHCP ou `NetworkManager`: alteração manual pode ser perdida.
+
+Boa prática:
+
+- definir DNS no gerenciador de rede em uso;
+- evitar editar `/etc/resolv.conf` manualmente em produção sem saber quem controla o arquivo.
+
+Exemplo, somente se ele for estático:
+
 ```bash
 sudo nano /etc/resolv.conf
 ```
+
 ```text
 nameserver 1.1.1.1
 nameserver 1.0.0.1
 ```
 
-### Endereço em loopback (anycast/serviços)
+### Endereço em loopback (anycast / IP de serviço)
 
-Útil para amarrar IPs de serviços à interface `lo`.
+Útil para bind de serviço, VIP ou cenários simples de anycast local.
+
 ```ini
 auto lo
 iface lo inet loopback
-
-iface lo inet static
-    address 200.200.200.200/32
+    up ip addr add 198.51.100.200/32 dev lo
+    down ip addr del 198.51.100.200/32 dev lo
 ```
 
-### Ponto a ponto (pointopoint)
+### Ponto a ponto (`pointopoint`)
 
-Quando quer gateway sem usar /30 público no roteador.
+Usado em cenários específicos onde o gateway não está no mesmo prefixo.
+
 ```ini
-allow-hotplug enp0s3
+auto enp0s3
 iface enp0s3 inet static
-    address 200.200.200.0
+    address 198.51.100.10
     pointopoint 10.50.50.1
     netmask 255.255.255.255
     gateway 10.50.50.1
 ```
 
+Uso avançado: valide em VM ou console antes de aplicar remotamente.
+
 ### IP privado com origem pública (rota com `src`)
 
-Padronize tráfego saindo por IP público mesmo com vizinhança privada.
-```ini
-allow-hotplug enp0s3
-iface enp0s3 inet static
-    address 200.200.200.200/32
+Permite saída com IP público mesmo usando uma vizinhança privada no enlace.
 
+```ini
+auto enp0s3
 iface enp0s3 inet static
     address 10.33.33.2/30
-    post-up /usr/sbin/ip route add default via 10.33.33.1 src 200.200.200.200
+    up ip addr add 198.51.100.10/32 dev enp0s3
+    post-up ip route replace default via 10.33.33.1 src 198.51.100.10
+    pre-down ip addr del 198.51.100.10/32 dev enp0s3
 ```
 
-IPv6 equivalente:
+### IPv6 equivalente
+
 ```ini
-# IPv6 Público
+auto enp0s3
 iface enp0s3 inet6 static
-    pre-up modprobe ipv6
-    address 2804:bebe:cafe::cafe
-    netmask 128
-
-# IPv6 Privado
-iface enp0s3 inet6 static
-    pre-up modprobe ipv6
-    address fd00:a::2
-    netmask 64
-    post-up /usr/sbin/ip -6 route add default via fd00:a::1 src 2804:bebe:cafe::cafe
+    address fd00:a::2/64
+    up ip -6 addr add 2001:db8:100::10/128 dev enp0s3
+    post-up ip -6 route replace default via fd00:a::1 src 2001:db8:100::10
+    pre-down ip -6 addr del 2001:db8:100::10/128 dev enp0s3
 ```
+
+Não é necessário usar `modprobe ipv6` em Debian 12/13 atual.
 
 ### VLAN em `ifupdown`
 
-Carregue o módulo e ative no boot:
+Na maioria dos casos, basta instalar o pacote `vlan` e usar o nome da subinterface.
+
 ```bash
-sudo modprobe 8021q
-echo 8021q | sudo tee -a /etc/modules
+sudo apt install -y vlan
 ```
 
-Defina a subinterface VLAN (ex.: 171):
 ```ini
-allow-hotplug enp0s3.171
-iface enp0s3.171 inet static
+auto enp0s3.256
+iface enp0s3.256 inet static
     address 10.88.88.2/24
 ```
 
-### PBR – Roteamento baseado em políticas
+O módulo `8021q` costuma carregar automaticamente. Só force manualmente se realmente precisar.
 
-Crie uma tabela dedicada e regras de roteamento:
+### PBR — Roteamento baseado em políticas
+
+No Debian 12/13, o arquivo do pacote costuma existir em `/usr/share/iproute2/rt_tables`, mas `/etc/iproute2/rt_tables` pode não existir por padrão. Para não alterar arquivo do pacote, crie o override em `/etc`.
+
+Motivo:
+
+- `/usr/share/iproute2/rt_tables` pertence ao pacote;
+- `/etc/iproute2/rt_tables` é o lugar mais correto para customização local do host;
+- assim você evita perder ajuste seu em atualização de pacote.
+
 ```bash
-echo "100 cgnat" | sudo tee -a /etc/iproute2/rt_tables
+sudo install -d -m 755 /etc/iproute2
+sudo nano /etc/iproute2/rt_tables
 ```
 
-Exemplo enviando 100.64.0.0/10 por outro next-hop:
+Adicione uma única linha:
+
+```text
+100 cgnat
+```
+
+Exemplo:
+
 ```ini
-allow-hotplug enp0s3
+auto enp0s3
 iface enp0s3 inet static
     address 10.200.200.2/30
-    post-up ip route add default via 10.200.200.1 dev enp0s3 table cgnat
+    post-up ip route replace default via 10.200.200.1 dev enp0s3 table cgnat
     post-up ip rule add from 100.64.0.0/10 lookup cgnat
+    pre-down ip rule del from 100.64.0.0/10 lookup cgnat
 ```
 
 ### Rotas blackhole
 
-Para descartar tráfego de um prefixo específico:
 ```ini
-allow-hotplug enp0s3
-iface enp0s3 inet static
-    address 10.33.33.2/30
-    post-up /usr/sbin/ip route add blackhole 200.200.200.128/26 metric 250 || true
+post-up ip route replace blackhole 198.51.100.128/26 metric 250
 ```
 
-### Comandos úteis (sem reiniciar serviço)
+### Comandos úteis (temporários)
 
-Adicionar/visualizar/remover IPs de forma volátil:
 ```bash
 ip addr add 192.168.7.7/32 dev enp0s3
 ip -6 addr add 2001:db8:1::1/128 dev enp0s3
@@ -469,87 +560,74 @@ ip addr del 192.168.7.7/32 dev enp0s3
 ip -6 addr del 2001:db8:1::1/128 dev enp0s3
 ```
 
----
-
 ### Múltiplos IPs na mesma interface
 
-O `ifupdown` não suporta múltiplos `address` no mesmo bloco. Use comandos `up`/`down`:
+No `ifupdown`, um caminho comum é usar comandos `up`/`down`:
+
 ```ini
 iface enp2s0 inet static
     address 192.168.1.100
     netmask 255.255.255.0
     gateway 192.168.1.1
-    # IPs adicionais
     up ip addr add 192.168.1.101/24 dev enp2s0
-    down ip addr del 192.168.1.101/24 dev enp2s0 || true
-    up ip addr add 192.168.1.102/24 dev enp2s0
-    down ip addr del 192.168.1.102/24 dev enp2s0 || true
+    down ip addr del 192.168.1.101/24 dev enp2s0
 ```
 
 ### Rotas com métrica (multi-homing)
 
-Defina a prioridade das rotas padrão:
 ```ini
 post-up ip route replace default via 192.168.1.1 dev enp2s0 metric 100
-post-up ip route add default via 10.0.0.1 dev enp3s0 metric 200
+post-up ip route replace default via 10.0.0.1 dev enp3s0 metric 200
 ```
 
 ### MTU, offload, velocidade/duplex e EEE
 
-Verifique capacidades:
 ```bash
 sudo ethtool enp2s0
-sudo ethtool -k enp2s0   # offloads
+sudo ethtool -k enp2s0
 sudo ethtool --show-eee enp2s0
 ```
 
-Ajustes comuns (sessão atual):
+Se `--show-eee` retornar `Operation not supported`, o driver ou a NIC não expõe controle de EEE via `ethtool`. Nesse caso, ignore esse ajuste.
+
+Exemplo de ajuste, somente se o hardware suportar:
+
 ```bash
-# desativar EEE (pode corrigir instabilidade com alguns switches)
 sudo ethtool --set-eee enp2s0 eee off
-
-# forçar 1000/Full (cautela: deve combinar com o switch)
 sudo ethtool -s enp2s0 autoneg off speed 1000 duplex full
-
-# offloads (apenas para troubleshooting)
-sudo ethtool -K enp2s0 gro off gso off tso off lro off rx off tx off
 ```
 
-### Persistir ajustes de `ethtool` com systemd
+Desativar offloads deve ficar só para troubleshooting.
 
-Crie um serviço para aplicar no boot (ajuste interface e comandos conforme seu caso):
+### Persistir ajustes de `ethtool` com `systemd`
+
+Crie o arquivo `/etc/systemd/system/ethtool-enp2s0.service` e cole o conteúdo abaixo:
+
 ```bash
 sudo nano /etc/systemd/system/ethtool-enp2s0.service
 ```
-Conteúdo:
-```
+
+```ini
 [Unit]
 Description=Apply ethtool settings for enp2s0
-Wants=network-pre.target
-Before=network-pre.target
+After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/sbin/ethtool -s enp2s0 wol d
 ExecStart=/usr/sbin/ethtool --set-eee enp2s0 eee off
 RemainAfterExit=yes
 
 [Install]
 WantedBy=multi-user.target
 ```
-Ative:
+
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now ethtool-enp2s0.service
 ```
 
-### Bridge (br0) para virtualização/containers
+### Bridge (`br0`)
 
-Instale utilitários e crie a bridge:
-```bash
-sudo apt install -y bridge-utils
-```
-Exemplo com IP na bridge e a porta física como membro:
 ```ini
 auto br0
 iface br0 inet static
@@ -561,47 +639,32 @@ iface br0 inet static
     bridge_fd 0
 ```
 
-### Bonding (agregação) — 802.3ad ou active-backup
+### Bonding
 
-Instale e carregue o módulo:
-```bash
-sudo apt install -y ifenslave
-echo bonding | sudo tee -a /etc/modules
-```
-
-Exemplo LACP (requer switch configurado para 802.3ad):
 ```ini
 auto bond0
 iface bond0 inet static
     address 192.168.1.100
     netmask 255.255.255.0
     gateway 192.168.1.1
-    slaves enp2s0 enp3s0
+    bond-slaves enp2s0 enp3s0
     bond-mode 802.3ad
     bond-miimon 100
-    bond-lacp-rate 1
-    bond-xmit-hash-policy layer3+4
 ```
 
-Exemplo active-backup (sem necessidade de LACP):
-```ini
-auto bond0
-iface bond0 inet dhcp
-    slaves enp2s0 enp3s0
-    bond-mode active-backup
-    bond-miimon 100
-```
+LACP exige configuração compatível no switch.
 
 ### Alternativa: `systemd-networkd`
-Para servidores modernos, `systemd-networkd` é uma alternativa poderosa ao `ifupdown`. A configuração é feita em arquivos `.network` no diretório `/etc/systemd/network/`.
 
-Arquivo: `/etc/systemd/network/10-wired.network`
-Comando:
+Exemplo básico:
+
+Crie o arquivo `/etc/systemd/network/10-wired.network` e cole o conteúdo abaixo:
+
 ```bash
 sudo nano /etc/systemd/network/10-wired.network
 ```
-Conteúdo (estático IPv4 + SLAAC IPv6):
-```
+
+```ini
 [Match]
 Name=enp2s0
 
@@ -611,20 +674,21 @@ Gateway=192.168.1.1
 DNS=1.1.1.1
 IPv6AcceptRA=yes
 ```
-Ative o serviço e desative o que não usa:
+
+Ativação:
+
 ```bash
-sudo systemctl disable --now networking NetworkManager
-sudo systemctl enable --now systemd-networkd systemd-resolved
-```
-Sincronize o `resolv.conf`:
-```bash
-sudo ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+sudo systemctl enable systemd-networkd
+sudo systemctl start systemd-networkd
 ```
 
----
+Aviso operacional:
 
-<a id="12"></a>
-## 10. 🧰 Solução de Problemas
+- só desative `networking` ou `NetworkManager` depois de validar que o `networkd` realmente assumiu a interface;
+- não faça essa troca por SSH sem console, snapshot ou outra forma de recuperação.
+
+<a id="11"></a>
+## 11. Solução de Problemas
 
 - Link sobe/desce (flapping): verifique `dmesg -T | grep -i link`, negocie velocidade/duplex com `ethtool`, desative EEE.
 - Sem IP no DHCP: `journalctl -b -u networking | tail -n 100`, `sudo dhclient -v enp2s0` e analise respostas.
@@ -651,6 +715,8 @@ sudo ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 - `resolvectl(1)` (systemd-resolved): https://manpages.debian.org/bookworm/systemd/resolvectl.1.en.html
 
 ---
+
+## Créditos
 
 Autor: Paulo Rocha  
 Repositório: https://github.com/PauloNRocha

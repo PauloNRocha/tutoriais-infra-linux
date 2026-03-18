@@ -405,8 +405,10 @@ nvcc cuda_test.cu -o cuda_test && ./cuda_test
    Se aparecer algo como `nvidia/<VERSAO_REAL>`, use essa mesma versão nos comandos abaixo.
 
 4. **Se necessário, remover e reconstruir o módulo DKMS**
+
+Se o `dkms status` mostrar a versão correta, use essa mesma versão abaixo:
    ```bash
-   sudo dkms remove -m nvidia -v <VERSAO_REAL> --all || true
+   sudo dkms remove -m nvidia -v <VERSAO_REAL> --all
    sudo dkms build  -m nvidia -v <VERSAO_REAL> -k $(uname -r)
    sudo dkms install -m nvidia -v <VERSAO_REAL> -k $(uname -r)
    ```
@@ -513,8 +515,6 @@ sudo dkms status
 
 <a id="12"></a>
 ## 12) Conclusão
-
-Resumindo este guia em poucas linhas:
 
 - para ter menos dor de cabeça no Ubuntu 24.04 com notebook híbrido, o caminho mais previsível costuma ser **kernel genérico + driver NVIDIA via `apt`**;
 - se realmente precisar usar o `.run`, mantenha o ambiente o mais simples possível: **kernel genérico**, Secure Boot desligado, Nouveau bloqueado e KMS ativado;

@@ -4,7 +4,7 @@
 
 Neste guia prático, o Wi‑Fi é configurado no **Debian 12 (Bookworm)** cobrindo dois caminhos comuns: servidores (`ifupdown` + `wpa_supplicant`) e desktops (`NetworkManager` via `nmcli`). Há exemplos para redes comuns, redes ocultas e WPA2‑Enterprise, além de dicas para resolver problemas.
 
-Veja também: [Configuração de Rede – Debian 12 (Ethernet)](../rede/guia_configurar_rede_debian12.md).
+Veja também: [Configuração de Rede – Debian 12/13 (Ethernet)](../rede/guia_configurar_rede_debian12_13.md).
 
 ---
 

@@ -71,7 +71,7 @@ Também tento deixar os passos bem detalhados, porque muita coisa depois vira co
 
 | Título | Descrição |
 |------|-----------|
-| [Configuração de Rede no Debian 12](rede/guia_configurar_rede_debian12.md) | Configuração de interfaces, IP fixo e DHCP no Debian. |
+| [Configuração de Rede no Debian 12/13](rede/guia_configurar_rede_debian12_13.md) | Configuração de interfaces, IP fixo e DHCP no Debian. |
 | [Configuração de Wi-Fi no Debian 12](rede/guia_configurar_wifi_debian12.md) | Conexão e troubleshooting de redes Wi-Fi. |
 
 ---
