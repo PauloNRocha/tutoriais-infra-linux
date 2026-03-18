@@ -92,7 +92,7 @@ sudo apt install -y ifupdown net-tools ethtool
 ```
 
 - `ifupdown` → gerencia interfaces via `/etc/network/interfaces`.  
-- `net-tools` → utilitários clássicos (`ifconfig`, `netstat`).  
+- `net-tools` → utilitários clássicos (`ifconfig`, `netstat`); hoje é opcional e fica mais por compatibilidade com hábito antigo.
 - `ethtool` → opções da placa (WOL, velocidade/duplex).
 
 ---
@@ -178,10 +178,19 @@ iface enp2s0 inet static
     dns-nameservers 1.1.1.1 8.8.8.8
 ```
 
+Observação importante sobre DNS:
+
+- em `ifupdown`, a diretiva `dns-nameservers` só tem efeito quando existe algo no sistema aplicando isso ao `resolv.conf`, como `resolvconf`;
+- em host que usa `systemd-resolved` ou `NetworkManager`, o comportamento do DNS pode ser outro;
+- se o DNS não subir como esperado, valide primeiro quem controla `/etc/resolv.conf` antes de insistir em editar o arquivo manualmente.
+
 4) Aplicar sem reboot:
 ```bash
+sudo ifdown enp2s0
 sudo ifup enp2s0
 ```
+
+Se estiver remoto por SSH, essa etapa merece cautela. Se possível, tenha console, snapshot ou outra forma de voltar atrás antes de derrubar a interface.
 
 Se você usa Desktop com `NetworkManager`, faça uma escolha:
 
@@ -252,6 +261,13 @@ Em instalação mínima do Debian, o `nmcli` pode não existir ainda.
 
 ```bash
 sudo apt install network-manager -y
+```
+
+Antes de criar conexões novas, veja o que já existe:
+
+```bash
+nmcli device status
+nmcli con show
 ```
 
 ### DHCP (IPv4) + SLAAC (IPv6)
