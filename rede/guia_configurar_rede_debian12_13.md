@@ -467,8 +467,8 @@ nameserver 1.0.0.1
 ```ini
 auto lo
 iface lo inet loopback
-    up ip addr add 198.51.100.200/32 dev lo
-    down ip addr del 198.51.100.200/32 dev lo
+    up ip addr add 203.0.113.254/32 dev lo
+    down ip addr del 203.0.113.254/32 dev lo
 ```
 
 ### Ponto a ponto (`pointopoint`)
@@ -478,10 +478,10 @@ Usado em cenários específicos onde o gateway não está no mesmo prefixo.
 ```ini
 auto enp0s3
 iface enp0s3 inet static
-    address 198.51.100.10
-    pointopoint 10.50.50.1
+    address 203.0.113.42
+    pointopoint 10.60.60.1
     netmask 255.255.255.255
-    gateway 10.50.50.1
+    gateway 10.60.60.1
 ```
 
 Uso avançado: valide em VM ou console antes de aplicar remotamente.
@@ -493,10 +493,10 @@ Permite saída com IP público mesmo usando uma vizinhança privada no enlace.
 ```ini
 auto enp0s3
 iface enp0s3 inet static
-    address 10.33.33.2/30
-    up ip addr add 198.51.100.10/32 dev enp0s3
-    post-up ip route replace default via 10.33.33.1 src 198.51.100.10
-    pre-down ip addr del 198.51.100.10/32 dev enp0s3
+    address 172.22.30.2/30
+    up ip addr add 203.0.113.42/32 dev enp0s3
+    post-up ip route replace default via 172.22.30.1 src 203.0.113.42
+    pre-down ip addr del 203.0.113.42/32 dev enp0s3
 ```
 
 ### IPv6 equivalente
@@ -504,10 +504,10 @@ iface enp0s3 inet static
 ```ini
 auto enp0s3
 iface enp0s3 inet6 static
-    address fd00:a::2/64
-    up ip -6 addr add 2001:db8:100::10/128 dev enp0s3
-    post-up ip -6 route replace default via fd00:a::1 src 2001:db8:100::10
-    pre-down ip -6 addr del 2001:db8:100::10/128 dev enp0s3
+    address fd42:100::2/64
+    up ip -6 addr add 2001:db8:4242::42/128 dev enp0s3
+    post-up ip -6 route replace default via fd42:100::1 src 2001:db8:4242::42
+    pre-down ip -6 addr del 2001:db8:4242::42/128 dev enp0s3
 ```
 
 Não é necessário usar `modprobe ipv6` em Debian 12/13 atual.
@@ -521,9 +521,9 @@ sudo apt install -y vlan
 ```
 
 ```ini
-auto enp0s3.256
-iface enp0s3.256 inet static
-    address 10.88.88.2/24
+auto enp0s3.220
+iface enp0s3.220 inet static
+    address 10.77.220.2/24
 ```
 
 O módulo `8021q` costuma carregar automaticamente. Só force manualmente se realmente precisar.
@@ -546,7 +546,7 @@ sudo nano /etc/iproute2/rt_tables
 Adicione uma única linha:
 
 ```text
-100 cgnat
+120 saida_nat
 ```
 
 Exemplo:
@@ -554,16 +554,16 @@ Exemplo:
 ```ini
 auto enp0s3
 iface enp0s3 inet static
-    address 10.200.200.2/30
-    post-up ip route replace default via 10.200.200.1 dev enp0s3 table cgnat
-    post-up ip rule add from 100.64.0.0/10 lookup cgnat
-    pre-down ip rule del from 100.64.0.0/10 lookup cgnat
+    address 172.22.200.2/30
+    post-up ip route replace default via 172.22.200.1 dev enp0s3 table saida_nat
+    post-up ip rule add from 100.72.0.0/16 lookup saida_nat
+    pre-down ip rule del from 100.72.0.0/16 lookup saida_nat
 ```
 
 ### Rotas blackhole
 
 ```ini
-post-up ip route replace blackhole 198.51.100.128/26 metric 250
+post-up ip route replace blackhole 203.0.113.128/27 metric 250
 ```
 
 ### Comandos úteis (temporários)
@@ -647,9 +647,8 @@ sudo systemctl enable --now ethtool-enp2s0.service
 ```ini
 auto br0
 iface br0 inet static
-    address 192.168.1.100
-    netmask 255.255.255.0
-    gateway 192.168.1.1
+    address 192.0.2.10/24
+    gateway 192.0.2.1
     bridge_ports enp2s0
     bridge_stp off
     bridge_fd 0
@@ -660,9 +659,8 @@ iface br0 inet static
 ```ini
 auto bond0
 iface bond0 inet static
-    address 192.168.1.100
-    netmask 255.255.255.0
-    gateway 192.168.1.1
+    address 192.0.2.20/24
+    gateway 192.0.2.1
     bond-slaves enp2s0 enp3s0
     bond-mode 802.3ad
     bond-miimon 100
