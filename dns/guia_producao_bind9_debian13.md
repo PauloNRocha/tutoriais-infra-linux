@@ -1,9 +1,11 @@
-# BIND 9 no Debian 13 — Master/Slave + TSIG + DNSSEC + IPv4/IPv6 + nftables + Fail2Ban + Registro.br
+# Guia de Produção: BIND9 no Debian 13 com Primary/Secondary, TSIG, DNSSEC e Fail2Ban
 
 *Criado em: 08 de janeiro de 2026*  
-*Última atualização em: 30 de janeiro de 2026*
+*Última atualização em: 23 de março de 2026*
 
-Este guia detalha o processo completo para configurar um par de servidores DNS autoritativos (Master/Slave) usando **BIND9** em um ambiente **Debian 13 (Trixie)**. O foco é em uma implementação de produção, segura e resiliente, cobrindo desde a configuração básica até a proteção avançada com transferência de zona autenticada (**TSIG**), assinatura automática de zonas com **DNSSEC** e defesa ativa contra abusos com **Fail2Ban**.
+Montei este guia para deixar registrado um padrão de implantação de **BIND9 autoritativo** no **Debian 13 (Trixie)**, com dois servidores, transferência de zona autenticada por **TSIG**, assinatura automática com **DNSSEC** e proteção básica com **nftables** e **Fail2Ban**.
+
+Veja também: [guia de recuperação de zona BIND9 com DNSSEC após erro de sintaxe](./guia_producao_bind9_recuperacao_zona_dnssec.md)
 
 Ele combina as seguintes características e boas práticas:
 
@@ -12,14 +14,15 @@ Ele combina as seguintes características e boas práticas:
 -   **DNSSEC moderno**: Configuração de `dnssec-policy` (KASP) com rotação automática de chaves.
 -   **Boas práticas Debian**: Organização de arquivos, validação e técnicas avançadas de troubleshooting.
 
-> **Convenção de Nomes:** O BIND atualmente adota a nomenclatura “Primary/Secondary”, mas este guia utiliza os termos “Master/Slave” por serem amplamente conhecidos e utilizados na prática.
+> **Convenção de nomes:** a documentação atual do BIND usa `Primary` e `Secondary`. Se você está acostumado com `Master` e `Slave`, a equivalência aqui é direta.
 
-> **Objetivo:** Ao final deste tutorial, você terá uma infraestrutura DNS autoritativa completa com dois servidores (Master e Slave) em alta disponibilidade. Suas zonas (forward e reversa) estarão protegidas com DNSSEC, as transferências de zona serão autenticadas com TSIG, e os servidores estarão defendidos por um firewall (`nftables`) e um sistema de prevenção de intrusão (`Fail2Ban`). A configuração estará pronta para ser usada em um ambiente de produção, incluindo os passos para publicar suas chaves DNSSEC no Registro.br.
+> **Objetivo:** ao final deste guia, a ideia é ter dois servidores autoritativos funcionando de forma previsível, com zonas forward e reversa, transferência Primary/Secondary autenticada por TSIG, DNSSEC com KASP e um mínimo de proteção para exposição pública em produção.
 
 
 ---
 
-## Índice
+## Índice rápido
+0. [O que você vai construir (visão rápida)](#0)
 1. [Antes de começar (checklist obrigatório)](#1)
 2. [Variáveis do exemplo (troque pelos seus dados)](#2)
 3. [Preparação do sistema (ns1 e ns2)](#3)
@@ -27,9 +30,9 @@ Ele combina as seguintes características e boas práticas:
 5. [Organização de diretórios](#5)
 6. [Logging do BIND (para auditoria + Fail2Ban)](#6)
 7. [Configuração base do BIND (`named.conf.options`)](#7)
-8. [TSIG: transferência segura Master ↔ Slave](#8)
-9. [Master (ns1): declarar zonas + criar arquivos de zona](#9)
-10. [Slave (ns2): declarar zonas e transferir do Master](#10)
+8. [TSIG: transferência segura Primary ↔ Secondary](#8)
+9. [Primary (ns1): declarar zonas + criar arquivos de zona](#9)
+10. [Secondary (ns2): declarar zonas e transferir do Primary](#10)
 11. [Registro.br: publicar delegação (NS/glue) e DNSSEC (DS)](#11)
 12. [Fail2Ban: bloquear abuso automaticamente (ns1 e ns2)](#12)
 13. [(Opcional) DoH (DNS over HTTPS) — use com MUITA clareza de objetivo](#13)
@@ -40,12 +43,15 @@ Ele combina as seguintes características e boas práticas:
 
 ---
 
+<a id="0"></a>
 ## 0) O que você vai construir (visão rápida)
 
 Dois servidores DNS autoritativos:
 
-- **ns1** = Master (Primary) — edita zonas e notifica o Slave
-- **ns2** = Slave (Secondary) — puxa zonas via transferência (AXFR/IXFR)
+- **ns1** = Primary — edita zonas e notifica o Secondary
+- **ns2** = Secondary — puxa zonas via transferência:
+  - `AXFR` = transferência completa da zona
+  - `IXFR` = transferência incremental, só com as mudanças
 
 Com:
 
@@ -77,13 +83,13 @@ Com:
 <a id="2"></a>
 ## 2) Variáveis do exemplo (troque pelos seus dados)
 
-Este guia usa IPs de documentação (RFC 5737) para os exemplos.
+Nos exemplos abaixo, vou usar IPs de documentação (RFC 5737) para evitar colisão com endereços reais.
 
 | Item | Exemplo |
 |---|---|
 | Domínio | `exemplo.com.br` |
-| Master | `ns1.exemplo.com.br` |
-| Slave | `ns2.exemplo.com.br` |
+| Primary | `ns1.exemplo.com.br` |
+| Secondary | `ns2.exemplo.com.br` |
 | IPv4 ns1 | `203.0.113.10` |
 | IPv4 ns2 | `203.0.113.20` |
 | IPv6 ns1 | `2001:db8:abcd::10` |
@@ -111,6 +117,20 @@ No **ns2**:
 sudo hostnamectl set-hostname ns2.exemplo.com.br
 ```
 
+Em instalação limpa, também vale ajustar `/etc/hosts` para o hostname novo resolver localmente. Isso evita aviso de `sudo` do tipo `unable to resolve host ...`.
+
+No **ns1**:
+
+```bash
+echo '127.0.1.1 ns1.exemplo.com.br ns1' | sudo tee -a /etc/hosts
+```
+
+No **ns2**:
+
+```bash
+echo '127.0.1.1 ns2.exemplo.com.br ns2' | sudo tee -a /etc/hosts
+```
+
 ### 3.2) Instale pacotes
 
 Em **ambos**:
@@ -119,6 +139,9 @@ Em **ambos**:
 sudo apt update
 sudo apt install -y bind9 bind9-utils dnsutils nftables fail2ban
 ```
+
+Se a máquina estiver muito enxuta e você estiver usando um usuário comum, pode ser necessário instalar `sudo` antes.  
+Se você já entrou como `root`, basta executar os mesmos comandos sem o `sudo`.
 
 Verifique a versão:
 
@@ -149,6 +172,16 @@ Se o NTP não estiver ativo:
 ```bash
 sudo timedatectl set-ntp true
 ```
+
+Se isso retornar algo como `Failed to set ntp: NTP not supported`, instale e habilite `chrony`:
+
+```bash
+sudo apt install -y chrony
+sudo systemctl enable --now chrony
+chronyc tracking
+```
+
+Se você quiser um passo a passo completo só para NTP, veja também: [guia de produção de servidor NTP interno com Chrony no Debian 13](../sistema/guia_producao_ntp_chrony_debian13.md)
 
 ---
 
@@ -220,7 +253,7 @@ sudo systemctl enable --now nftables
 <a id="5"></a>
 ## 5) Organização de diretórios
 
-### 5.1) Master (ns1)
+### 5.1) Primary (ns1)
 
 ```bash
 sudo mkdir -p /var/lib/bind/master-aut/exemplo.com.br/keys
@@ -230,7 +263,7 @@ sudo chown -R bind:bind /var/lib/bind/master-aut /var/lib/bind/master-rev
 sudo chmod -R 750 /var/lib/bind/master-aut /var/lib/bind/master-rev
 ```
 
-### 5.2) Slave (ns2)
+### 5.2) Secondary (ns2)
 
 ```bash
 sudo mkdir -p /var/cache/bind/slave-aut/exemplo.com.br
@@ -239,10 +272,12 @@ sudo mkdir -p /var/cache/bind/slave-rev/IPv6/2001.db8.abcd.x
 sudo chown -R bind:bind /var/cache/bind/slave-aut /var/cache/bind/slave-rev
 ```
 
+> Observação: no Secondary, esse layout é só uma forma organizada de separar forward e reverso. Em produção, você pode usar um cache mais “flat”, como `/var/cache/bind/slaves/`, desde que os caminhos declarados nas zonas batam com o que o BIND consegue gravar.
+
 > Por que assim?
 > - Config fica em `/etc/bind/`
-> - Dados do Master ficam em `/var/lib/bind/` (e as chaves DNSSEC ficam em `.../keys` **dentro de cada zona**)
-> - Zonas transferidas (cache do Slave) ficam em `/var/cache/bind/`
+> - Dados do Primary ficam em `/var/lib/bind/` (e as chaves DNSSEC ficam em `.../keys` **dentro de cada zona**)
+> - Zonas transferidas (cache do Secondary) ficam em `/var/cache/bind/`
 >
 > Dica: em `/var/cache/bind/` você pode ver arquivos gerados pelo próprio BIND (ex.: `managed-keys.bind`, `*.jnl`, `named_dump.db`). Isso é normal.
 
@@ -442,7 +477,7 @@ Isso só faz sentido se você **habilitou recursão** no passo 7.1 (ou se você 
 ```bash
 ls -la /etc/resolv.conf
 readlink -f /etc/resolv.conf
-systemctl is-active systemd-resolved || true
+systemctl is-active systemd-resolved || echo "systemd-resolved inativo ou ausente"
 ```
 
 #### 7.2.2) Caso A — `/etc/resolv.conf` é arquivo normal (estático)
@@ -495,20 +530,26 @@ Você pode manter o stub e fazer o `systemd-resolved` usar o BIND como upstream:
 ---
 
 <a id="8"></a>
-## 8) TSIG: transferência segura Master ↔ Slave (recomendado)
+## 8) TSIG: transferência segura Primary ↔ Secondary (recomendado)
 
-> TSIG autentica transferência/NOTIFY (AXFR/IXFR). **Não tem relação com DNSSEC.**
+> TSIG autentica transferência/NOTIFY (`AXFR`/`IXFR`). **Não tem relação com DNSSEC.**
+>
+> Resumo rápido:
+> - `AXFR` = cópia completa da zona
+> - `IXFR` = só as diferenças desde o último serial
+>
+> Quando tudo está saudável, o Secondary tende a preferir `IXFR`. Se não der, ele pode cair para `AXFR`.
 
 ### 8.1) Criar o arquivo de chaves (NS1)
 
-No **ns1 (Master)**:
+No **ns1 (Primary)**:
 
 ```bash
 sudo install -d -m 0750 -o root -g bind /etc/bind
 sudo install -m 0640 -o root -g bind /dev/null /etc/bind/keys.conf
 ```
 
-### 8.2) Gerar a chave TSIG no Master (NS1)
+### 8.2) Gerar a chave TSIG no Primary (ns1)
 
 Verifique qual utilitário está disponível:
 
@@ -522,11 +563,16 @@ Opção A — usando `tsig-keygen` (se disponível):
 sudo tsig-keygen -a hmac-sha256 xfr-exemplo | sudo tee /etc/bind/keys.conf >/dev/null
 ```
 
-Opção B — alternativa compatível (recomendada):
+Opção B — alternativa compatível, mas em modo silencioso:
 
 ```bash
-sudo ddns-confgen -a hmac-sha256 -k xfr-exemplo | sudo tee /etc/bind/keys.conf >/dev/null
+sudo ddns-confgen -q -a hmac-sha256 -k xfr-exemplo | sudo tee /etc/bind/keys.conf >/dev/null
 ```
+
+> No Debian 13 atual, `ddns-confgen` **sem `-q`** inclui blocos de exemplo como `update-policy` e `nsupdate`, e isso quebra o `named-checkconf` quando você grava a saída direto em `/etc/bind/keys.conf`.  
+> Por isso, aqui o caminho mais seguro é:
+> - preferir `tsig-keygen`, ou
+> - usar `ddns-confgen` com `-q`.
 
 Ajuste permissões (se necessário):
 
@@ -537,7 +583,7 @@ sudo chmod 0640 /etc/bind/keys.conf
 
 > **ATENÇÃO:** Trate este arquivo como uma senha. Ele contém o segredo criptográfico usado para autenticar transferências de zona.
 
-### 8.3) Copiar a chave para o Slave (NS2)
+### 8.3) Copiar a chave para o Secondary (ns2)
 
 No **ns1**:
 
@@ -581,8 +627,8 @@ sudo named-checkconf
 
 ### 8.5) Observações importantes
 
-- A chave TSIG deve ser a mesma no Master e no Slave.
-- Gere a chave apenas no Master.
+- A chave TSIG deve ser a mesma no Primary e no Secondary.
+- Gere a chave apenas no Primary.
 - Não publique nem versiona o arquivo `keys.conf`.
 - Se o arquivo for perdido, gere uma nova chave e atualize ambos os lados.
 
@@ -595,7 +641,7 @@ Nós vamos usar isso nos exemplos do `named.conf.local` do ns1 e do ns2.
 ---
 
 <a id="9"></a>
-## 9) Master (ns1): declarar zonas + criar arquivos de zona
+## 9) Primary (ns1): declarar zonas + criar arquivos de zona
 
 ### 9.1) `named.conf.local` (ns1)
 
@@ -628,8 +674,8 @@ zone "exemplo.com.br" {
   key-directory "/var/lib/bind/master-aut/exemplo.com.br/keys";
   dnssec-policy default;
 
-  # BIND 9.18+ (incluindo Debian 13): 'inline-signing' é necessário para dnssec-policy funcionar em zonas estáticas.
-  # Deixamos explícito por clareza e compatibilidade.
+  # Em versões atuais do BIND, `dnssec-policy` em zona estática depende de inline-signing.
+  # Na prática, o policy default já tende a usar isso, mas deixamos explícito para não ficar ambíguo no arquivo.
   inline-signing yes;
 };
 
@@ -889,7 +935,7 @@ sudo -u bind ls -la /var/lib/bind/master-rev/IPv6/2001.db8.abcd.x/
 ---
 
 <a id="10"></a>
-## 10) Slave (ns2): declarar zonas e transferir do Master
+## 10) Secondary (ns2): declarar zonas e transferir do Primary
 
 ### 10.1) `named.conf.local` (ns2)
 
@@ -1061,17 +1107,16 @@ dig -x 2001:db8:abcd::10 @1.1.1.1 +noall +answer
 Após reiniciar, aguarde 1–3 minutos e liste:
 
 ```bash
-sudo -u bind ls -1 /var/lib/bind/master-aut/exemplo.com.br/keys/
+sudo -u bind sh -c 'cd / && ls -1 /var/lib/bind/master-aut/exemplo.com.br/keys/'
 ```
 
 Identifique qual delas é **KSK** (a própria `.key` costuma ter comentário indicando):
 
 ```bash
-sudo -u bind sh -c 'grep -Hi "key-signing key" /var/lib/bind/master-aut/exemplo.com.br/keys/*.key || true'
+sudo -u bind sh -c 'cd / && find /var/lib/bind/master-aut/exemplo.com.br/keys -name "*.key" -exec grep -Hi "key-signing key" {} +'
 ```
 
-> Dica (bem importante): quando você usa `sudo -u bind ...` com `*` no caminho, o `*` precisa ser expandido **pelo shell que está rodando como `bind`**.  
-> Por isso este guia usa `sh -c '...'`: assim o wildcard (`*`) é expandido *depois* que o comando já está rodando como `bind` (e não pelo seu usuário, que normalmente não tem permissão de listar `.../keys`).
+> Dica: o `cd /` evita erro quando você roda o comando a partir de um diretório que o usuário `bind` não consegue acessar, como `/root` ou `/home/seu_usuario`.
 
 ### 11.7) DNSSEC: gerar o DS (SHA-256) a partir da KSK
 
@@ -1085,15 +1130,21 @@ sudo -u bind dnssec-dsfromkey -2 /var/lib/bind/master-aut/exemplo.com.br/keys/Ke
 
 > Se aparecer erro procurando `...key.key`, passe o caminho **sem** `.key` (como no exemplo acima).
 
-Opcional (automático, sem “adivinhar” o ID da KSK):
+Opcional (mais seguro, sem “adivinhar” o ID da KSK):
 
 ```bash
 sudo -u bind bash -c '
+cd /
 set -e
 KSK_KEY=$(grep -l "key-signing key" /var/lib/bind/master-aut/exemplo.com.br/keys/*.key | head -n 1)
 echo "KSK encontrada: $KSK_KEY"
-dnssec-dsfromkey -2 "${KSK_KEY%.key}"
 '
+```
+
+Depois, use o caminho retornado acima no `dnssec-dsfromkey`:
+
+```bash
+sudo -u bind sh -c 'cd / && dnssec-dsfromkey -2 /var/lib/bind/master-aut/exemplo.com.br/keys/Kexemplo.com.br.+013+12345'
 ```
 
 Se você também assina **reverso** com DNSSEC, gere o DS do reverso do mesmo jeito (um DS por zona):
@@ -1101,20 +1152,22 @@ Se você também assina **reverso** com DNSSEC, gere o DS do reverso do mesmo je
 ```bash
 # Reverso IPv4 (/24) — exemplo
 sudo -u bind bash -c '
+cd /
 set -e
 KSK_KEY=$(grep -l "key-signing key" /var/lib/bind/master-rev/IPv4/203.0.113.x/keys/*.key | head -n 1)
 echo "KSK reverso IPv4: $KSK_KEY"
-dnssec-dsfromkey -2 "${KSK_KEY%.key}"
 '
 
 # Reverso IPv6 (/48) — exemplo
 sudo -u bind bash -c '
+cd /
 set -e
 KSK_KEY=$(grep -l "key-signing key" /var/lib/bind/master-rev/IPv6/2001.db8.abcd.x/keys/*.key | head -n 1)
 echo "KSK reverso IPv6: $KSK_KEY"
-dnssec-dsfromkey -2 "${KSK_KEY%.key}"
 '
 ```
+
+Depois, repita o mesmo padrão usando o caminho da KSK de cada reverso.
 
 Saída (exemplo):
 
@@ -1155,7 +1208,7 @@ Campos:
   1. **Arquivos de log** (`logpath = /var/log/...`) — que é o que usamos aqui com o BIND (`/var/log/named/security.log`).
   2. **Journald** (`backend = systemd`) — útil para jails como `sshd` em sistemas sem `auth.log`.
 
-Como neste tutorial nós fazemos o BIND gravar o log **direto em arquivo** (via `logging { file ... }`), **você não precisa instalar `rsyslog`** para a jail do BIND funcionar.
+Como aqui o BIND grava o log **direto em arquivo** (via `logging { file ... }`), **você não precisa instalar `rsyslog`** para a jail do BIND funcionar.
 
 > Se você quiser usar Fail2Ban também para **SSH** no Debian 13 sem `rsyslog`, a abordagem recomendada é configurar o jail do `sshd` com `backend = systemd` (jornald), em vez de instalar rsyslog só por causa disso.
 
@@ -1177,6 +1230,9 @@ Se aparecer evento no log:
 ```bash
 sudo tail -n 50 /var/log/named/security.log
 ```
+
+> Observação importante: em Debian 13 limpo, um `dig @SEU_IP google.com A` retornando `REFUSED` **não garante**, por si só, que o `security.log` já terá linha útil para o Fail2Ban.  
+> Antes de habilitar a jail `named-refused`, confirme com `fail2ban-regex` que o log real do seu ambiente está casando com o filtro.
 
 ### 12.2) Usar filtro do Fail2Ban (preferência: `named-refused`)
 
@@ -1331,7 +1387,7 @@ Se você quer ser mais agressivo (e banir o IP no servidor inteiro), você pode 
    sudo systemctl restart fail2ban
    sudo systemctl status fail2ban --no-pager
    sudo fail2ban-client status named-refused
-   sudo nft list ruleset | grep -i f2b || true
+   sudo nft list ruleset | grep -i f2b || echo "nenhuma regra f2b apareceu no ruleset"
    ```
 
 **Por que usar `nftables[type=allports]` e não `nftables-allports`?**
@@ -1480,7 +1536,7 @@ sudo tail -n 50 /var/log/fail2ban.log
 
 ### 14.5) Teste negativo: garantir que sua zona NÃO vaza via AXFR
 
-O objetivo aqui é confirmar que **só o Slave autorizado** consegue transferir zona — e que qualquer outro host recebe “transfer failed”.
+O objetivo aqui é confirmar que **só o Secondary autorizado** consegue transferir zona — e que qualquer outro host recebe “transfer failed”.
 
 1. De uma máquina que **não** seja o ns2 (e que **não** tenha a TSIG), rode:
    ```bash
@@ -1508,7 +1564,7 @@ sudo named-checkconf
 sudo journalctl -u named -n 200 --no-pager
 ```
 
-### 15.2) Slave não transfere
+### 15.2) Secondary não transfere
 
 - Confira TCP/53 liberado entre ns1↔ns2.
 - Confirme a mesma TSIG em `/etc/bind/keys.conf` nos dois lados.
@@ -1522,7 +1578,23 @@ sudo journalctl -u named -n 200 --no-pager
 - DS no Registro.br não bate com a KSK atual → gere DS novamente com `dnssec-dsfromkey -2`.
 - Relógio errado → `timedatectl`.
 
-### 15.4) AppArmor bloqueando o log `/var/log/named/security.log`
+### 15.4) Aviso sobre `ixfr-from-differences` em zona assinada
+
+Se no `journalctl -u named` aparecer algo como:
+
+```text
+'ixfr-from-differences' is ignored for inline-signed zones
+```
+
+isso costuma ser só um aviso informativo quando a zona usa `dnssec-policy` com `inline-signing yes`.
+
+Na prática:
+
+- o BIND vai ignorar `ixfr-from-differences` nessa zona;
+- isso não significa que a zona está quebrada;
+- se você quiser evitar o aviso, remova `ixfr-from-differences yes` da zona afetada.
+
+### 15.5) AppArmor bloqueando o log `/var/log/named/security.log`
 
 Sintoma típico: o `named` não sobe (ou sobe sem log) e o journal mostra algo como `apparmor="DENIED"` ao tentar escrever em `/var/log/named/security.log`.
 
@@ -1569,10 +1641,10 @@ Sintoma típico: o `named` não sobe (ou sobe sem log) e o journal mostra algo c
 <a id="16"></a>
 ## 16) Cenário de desastre (DR): reconstruindo um NS perdido sem quebrar DNSSEC
 
-Se você perder o **ns1 (Master)** mas o **ns2 (Slave)** ainda estiver respondendo, você tem uma “janela” até o campo **`expire`** do SOA estourar. A prioridade é:
+Se você perder o **ns1 (Primary)** mas o **ns2 (Secondary)** ainda estiver respondendo, você tem uma “janela” até o campo **`expire`** do SOA estourar. A prioridade é:
 
 1. **Manter o domínio resolvendo** (mesmo que sem DNSSEC por um período).
-2. Recuperar a capacidade de **editar zona** com segurança (voltar a ter um Master).
+2. Recuperar a capacidade de **editar zona** com segurança (voltar a ter um Primary).
 3. Recolocar **DNSSEC corretamente** (DS compatível com as chaves em produção).
 
 ### 16.1) Checklist rápido (o que você ainda tem?)
@@ -1588,7 +1660,7 @@ Antes de mexer em qualquer coisa, responda:
 
 Aqui a regra é simples: **restaure as chaves e mantenha o DS** (não precisa trocar DS se as chaves são as mesmas).
 
-1. Reinstale/suba o ns1 seguindo o tutorial normalmente (passos 3 a 10).
+1. Reinstale/suba o ns1 seguindo o guia normalmente (passos 3 a 10).
 2. Restaure os `key-directory` no ns1 (exemplo; adapte ao seu backup). Aqui nós guardamos chaves **dentro de cada zona**, então você restaura “por pasta”:
    ```bash
    # Forward
@@ -1640,7 +1712,7 @@ No ns1 (e, se necessário, no ns2 enquanto você normaliza o ambiente):
 
 **Caminho recomendado (melhor):** restaurar do seu backup/controle de versão os arquivos de zona “fonte”.
 
-**Se você só tem o ns2 como fonte:** copie as zonas do Slave e use como base (cuidado com zonas assinadas).
+**Se você só tem o ns2 como fonte:** copie as zonas do Secondary e use como base (cuidado com zonas assinadas).
 
 No ns2, copie as zonas para um lugar seguro:
 
@@ -1700,7 +1772,7 @@ Se tudo passar, aí sim reinicie:
 sudo systemctl restart named
 ```
 
-> Atenção: se o seu Master usava `dnssec-policy`/`inline-signing`, é comum o Slave ter uma **zona já assinada** (arquivo `*.signed`, cheia de `RRSIG`, `DNSKEY`, etc.).  
+> Atenção: se o seu Primary usava `dnssec-policy`/`inline-signing`, é comum o Secondary ter uma **zona já assinada** (arquivo `*.signed`, cheia de `RRSIG`, `DNSKEY`, etc.).  
 > Nesse caso, **trate como referência**: não use como “fonte” se você perdeu as chaves. Reconstrua a zona “limpa” (somente os registros que você administra) e volte com DNSSEC depois.
 
 #### 16.3.4) Volte com DNSSEC (gerar novo DS)
@@ -1759,7 +1831,6 @@ Depois que tudo estiver estável (autoridade + transferência + serial correto):
 ### Fail2Ban (referência)
 
 - Manual do `jail.conf` (backends, `systemd`/journald, etc.): https://manpages.debian.org/bookworm/fail2ban/jail.conf.5.en.html
-- Boas práticas de `ignoreip` (whitelist): https://www.howtoforge.com/using-fail2ban-on-debian-12/
 - (Debian 13/Trixie) Discussão sobre `rsyslog` não vir instalado por padrão: https://lists.debian.org/debian-user/2025/02/msg00456.html
 
 ### AppArmor (referência)
@@ -1768,11 +1839,9 @@ Depois que tudo estiver estável (autoridade + transferência + serial correto):
 - Perfil `usr.sbin.named` (comentários sobre `/var/lib/bind`, `/var/cache/bind` e `/var/log/named`): https://bugs-devel.debian.org/904983
 - Caso prático: logs em `/var/log/named` e permissões: https://serverfault.com/questions/989969/debian-after-update-bind9-cannot-create-log-in-var-log-bind
 
-### Leitura complementar (inspiração/ideias)
-
-- Remontti (guia amplo de BIND + segurança no Debian): https://blog.remontti.com.br/5958
-
 ---
+
+## Créditos
 
 Autor: Paulo Rocha  
 Repositório: https://github.com/PauloNRocha
