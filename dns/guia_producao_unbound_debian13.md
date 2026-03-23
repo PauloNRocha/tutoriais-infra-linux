@@ -1,9 +1,9 @@
-# Guia de Produção: Unbound no Debian 13 (Trixie), DNS Recursivo para ISPs com DNSSEC e RPZ (bloqueio por segurança)
+# Guia de Produção: Unbound no Debian 13 (Trixie) como DNS recursivo para ISP com DNSSEC e RPZ de segurança
 
 *Criado em: 23 de janeiro de 2026*  
-*Última atualização em: 30 de janeiro de 2026*  
+*Última atualização em: 23 de março de 2026*  
 
-Este guia detalha o processo completo para configurar um servidor DNS recursivo de alta performance usando **Unbound** em um ambiente de **Provedor de Internet (ISP)** no **Debian 13 (Trixie)**. A configuração é otimizada para segurança e desempenho, incluindo **DNSSEC**, **QNAME Minimization (Minimização de QNAME)** e **RPZ (Response Policy Zones)** para bloqueio de domínios associados a ameaças (phishing/malware/C2), com atualização automatizada.
+Montei este guia para deixar registrado um desenho previsível de **resolver recursivo com Unbound** em **Debian 13 (Trixie)**, pensado para **ISP** e com foco em segurança operacional. Ele cobre **DNSSEC**, **QNAME Minimization**, **RPZ** para feeds de ameaça e a parte de automação que mantém isso rodando sem depender de intervenção manual toda hora.
 
 Ele combina as seguintes características e boas práticas:
 
@@ -13,14 +13,14 @@ Ele combina as seguintes características e boas práticas:
 -   **Alta Performance para ISP**: Otimização de cache, threads e buffers de rede para alto volume de tráfego.
 -   **Automação e Operação**: Scripts e `systemd timers` para manter as listas de bloqueio atualizadas e comandos de gestão para o dia a dia.
 
-> **Objetivo:** Ao final deste tutorial, você terá um servidor DNS recursivo robusto, que não aceita consultas públicas, protege seus clientes contra ameaças conhecidas e se defende de abusos, tudo de forma automatizada e escalável. A infraestrutura será capaz de atuar desde a raiz da internet, com validação DNSSEC e preparado para ambiente de produção de ISP.
+> **Objetivo:** ao final deste guia, a ideia é ter um resolver recursivo fechado, validando DNSSEC, consultando a raiz diretamente, aplicando RPZ de segurança com governança mínima e pronto para operar em produção sem virar DNS público por descuido.
 
 > **Nota:** este documento é independente, sem afiliação com NIC.br/CERT.br/CGI.br; links citados são apenas referências públicas.  
 > **Nota (jurídico/regulatório):** este material não é aconselhamento jurídico; valide políticas e comunicações com jurídico/regulatório do seu contexto.
 
 ---
 
-## Índice
+## Índice rápido
 0. [Escopo](#0)
 1. [Pré-requisitos](#1)
 2. [Instalação de pacotes](#2)
@@ -39,7 +39,7 @@ Ele combina as seguintes características e boas práticas:
 15. [Referências](#15)
 
 <a id="0"></a>
-## 0. Escopo (o que este tutorial faz, e o que NÃO faz)
+## 0. Escopo (o que este guia faz, e o que NÃO faz)
 
 ### 0.1 O que faz
 
@@ -69,7 +69,7 @@ Ele combina as seguintes características e boas práticas:
 - O efeito para o usuário é, em geral, **NXDOMAIN** (como “domínio não existe”). Para falsos positivos, existe **allowlist** e rollback rápido.
 - A implementação é **transparente e reversível**: você consegue desativar a política sem parar o DNS (seção 13).
 
-> **Importante (compliance):** este tutorial é técnico e **não substitui parecer jurídico**.  
+> **Importante (compliance):** este guia é técnico e **não substitui parecer jurídico**.  
 > Em ISP, a forma “mais defensável” é tratar o bloqueio via RPZ como **medida de segurança** (anti‑fraude/anti‑malware), com:
 > - critérios públicos de inclusão/remoção (somente ameaças);
 > - registro/auditoria mínima (logs e versão da lista);
@@ -174,7 +174,7 @@ DNSSEC valida assinaturas com janelas de tempo. Se o relógio estiver errado:
 - validações podem falhar (SERVFAIL em domínios DNSSEC),
 - e você “parece” estar com DNS quebrado sem estar.
 
-Este guia mostra o mínimo para subir NTP na seção **3**, mas **não** aprofunda NTP aqui.  
+Aqui eu mostro só o mínimo para garantir hora correta na seção **3**, mas **não** aprofundo NTP neste documento.  
 Para um passo a passo completo e pronto para produção, veja: **[Guia de Produção: Servidor NTP Interno com Chrony no Debian 13](../sistema/guia_producao_ntp_chrony_debian13.md)**.
 
 ### 1.6 Mapa rápido de arquivos
@@ -370,10 +370,10 @@ Antes de subir o Unbound, confirme quem está ouvindo na porta 53:
 sudo ss -lntup | grep -E '(^Netid|:53)'
 ```
 
-Se aparecer `systemd-resolved` ouvindo em `127.0.0.53:53` e você quer que **o Unbound** escute na porta 53 do host:
+Se aparecer `systemd-resolved` ouvindo em `127.0.0.53:53` e você quer que **o Unbound** escute na porta 53 do host, desative o serviço:
 
 ```bash
-sudo systemctl disable --now systemd-resolved || true
+sudo systemctl disable --now systemd-resolved
 ```
 
 > Nota: em instalações padrão do Debian, o `systemd-resolved` geralmente **não** vem habilitado ou nem instalado. Se ele não existir, isso **não é erro**.
@@ -400,11 +400,16 @@ sudo grep -nE '^[[:space:]]*include-toplevel:[[:space:]]*"/etc/unbound/unbound\.
 
 Se **não** aparecer, restaure o padrão do Debian (sem colar um `server:` gigante nele):
 
+Faça backup do arquivo do pacote:
+
 ```bash
 TS="$(date +%F_%H%M%S)"
-sudo cp -av /etc/unbound/unbound.conf "/etc/unbound/unbound.conf.bak.${TS}" \
-  || echo "INFO: /etc/unbound/unbound.conf não existe (primeira instalação) ou não foi possível copiar."
+sudo cp -av /etc/unbound/unbound.conf "/etc/unbound/unbound.conf.bak.${TS}"
+```
 
+Depois reinstale o pacote para restaurar o padrão do Debian:
+
+```bash
 sudo apt -y install --reinstall unbound
 ```
 
@@ -414,8 +419,7 @@ sudo apt -y install --reinstall unbound
 
 ```bash
 TS="$(date +%F_%H%M%S)"
-sudo cp -av /etc/unbound/unbound.conf.d "/etc/unbound/unbound.conf.d.bak.${TS}" \
-  || echo "INFO: /etc/unbound/unbound.conf.d ainda não existe (primeira instalação) ou não foi possível copiar."
+sudo cp -av /etc/unbound/unbound.conf.d "/etc/unbound/unbound.conf.d.bak.${TS}"
 ```
 
 Padrão de backup usado neste guia (arquivo único):
@@ -582,17 +586,8 @@ server:
     # Protege contra respostas tentando “remover” DNSSEC no caminho.
     harden-dnssec-stripped: yes
 
-    # Endurece validação do caminho de referrals.
-    harden-referral-path: yes
-
     # Protege contra algumas respostas “abaixo de NXDOMAIN”.
     harden-below-nxdomain: yes
-
-    # Protege contra tentativas de downgrade de algoritmo.
-    harden-algo-downgrade: yes
-
-    # Randomiza maiúsculas/minúsculas no QNAME (mitigação de spoofing).
-    use-caps-for-id: yes
 
     # Pode melhorar performance/negativos com DNSSEC (use com cuidado em ambientes muito heterogêneos).
     aggressive-nsec: yes
@@ -704,11 +699,9 @@ server:
     # - valores muito baixos (ex.: 1, 5, 10) tendem a rate-limitar clientes normais em ISP
     #   (principalmente em picos e em apps que abrem muitas conexões/consultas).
     #
-    # Ponto de partida (produção), se você quiser usar:
-    # - ISP médio (ponto de partida): 100;
-    # - se o Unbound enxerga o IP real do cliente/assinante: 50–200 costuma ser uma faixa razoável (comece em 100);
-    # - se o tráfego chega “mascarado” (muitos clientes compartilhando o mesmo IP de origem, ex.: BRAS/CGNAT/NAT):
-    #   você precisa de valores maiores (ex.: 200–1000+) ou deve manter desativado e tratar abuso fora do DNS.
+    # No ambiente que motivou este guia, o valor que ficou estável em produção foi 200.
+    # - se o Unbound enxerga o IP real do cliente/assinante, 50–200 costuma ser uma faixa razoável;
+    # - se o tráfego chega mascarado (BRAS/CGNAT/NAT), isso pode gerar falso positivo em massa.
     #
     # ATENÇÃO (ISP): qualquer mitigação por IP depende do IP de origem que o Unbound enxerga.
     # Veja a seção 1.2 (CGNAT e origem do IP).
@@ -719,12 +712,12 @@ server:
     # naquele instante e depois volta ao normal (não é bloqueio permanente).
     #
     # Calibração (recomendado):
-    # 1) comece com 100,
+    # 1) comece com 200 e observe por algumas horas ou dias,
     # 2) observe por algumas horas/dia,
     # 3) ajuste conforme o contador de rate-limit no Unbound:
     #    sudo unbound-control stats_noreset | grep -E 'queries_ip_ratelimited'
     # Se esse contador subir durante uso normal, aumente o `ip-ratelimit`.
-    ip-ratelimit: 100
+    ip-ratelimit: 200
 
     ########################################################################
     # Métricas (útil para auditoria/observabilidade)
@@ -734,6 +727,8 @@ server:
     extended-statistics: yes
 EOF
 ```
+
+De propósito, este guia **não** ativa por padrão `harden-referral-path`, `harden-algo-downgrade` e `use-caps-for-id`. A própria documentação do Unbound trata esses pontos com cautela por causa de compatibilidade, carga extra ou comportamento experimental. Se você quiser usar isso, teste separado e com métrica.
 
 6) Logs em arquivo (padrão deste guia).  
 Crie `/etc/unbound/unbound.conf.d/50-logging.conf`:
@@ -857,7 +852,7 @@ sudo unbound-checkconf
 
 ### 5.5 Logrotate para `/var/log/unbound/*.log`
 
-> Como este tutorial usa `logfile:` no Unbound, **logrotate** evita crescimento infinito de disco.
+> Como este guia usa `logfile:` no Unbound, **logrotate** evita crescimento infinito de disco.
 
 #### 5.5.1 (Debian) AppArmor e `logfile:` do Unbound (quando “Permission denied”)
 
@@ -1171,7 +1166,7 @@ As ações mais úteis:
 - **PASSTHRU**: permite explicitamente e **pode** impedir que outras RPZs bloqueiem.
 - **DISABLED**: desativa a ação (ótimo para **modo sombra**).
 
-Neste guia, o padrão é:
+Aqui, o padrão é:
 - **bloqueio = NXDOMAIN**
 - **allowlist = PASSTHRU**
 - **modo sombra = DISABLED (log sem bloquear)**
@@ -1215,8 +1210,8 @@ rpz:
     # Objetivo: permitir exceções (desbloqueios) de forma auditável, antes
     # da blocklist. Deve vir ANTES da RPZ de bloqueio.
     ########################################################################
-    name: "rpz.allow.seguranca.exemplo"
-    zonefile: "/var/lib/unbound/rpz/rpz.allow.seguranca.exemplo.zone"
+    name: "rpz.allow.seguranca.bloqueio"
+    zonefile: "/var/lib/unbound/rpz/rpz.allow.seguranca.bloqueio.zone"
     # Allowlist é manual e pequena; por padrão não logamos para não gerar ruído.
     rpz-log: no
     for-downstream: no
@@ -1228,8 +1223,8 @@ rpz:
     # Objetivo: bloquear ameaças (phishing/malware/C2) via NXDOMAIN.
     # A ação é controlada por `rpz-action-override`.
     ########################################################################
-    name: "rpz.seguranca.exemplo"
-    zonefile: "/var/lib/unbound/rpz/rpz.seguranca.exemplo.zone"
+    name: "rpz.seguranca.bloqueio"
+    zonefile: "/var/lib/unbound/rpz/rpz.seguranca.bloqueio.zone"
 
     # Padrão de bloqueio (segurança):
     rpz-action-override: nxdomain
@@ -1247,11 +1242,11 @@ EOF
 Crie a RPZ allowlist (mesmo vazia, ela ajuda a manter o desenho consistente):
 
 ```bash
-sudo tee /var/lib/unbound/rpz/rpz.allow.seguranca.exemplo.zone >/dev/null <<'EOF'
+sudo tee /var/lib/unbound/rpz/rpz.allow.seguranca.bloqueio.zone >/dev/null <<'EOF'
 $TTL 60
-$ORIGIN rpz.allow.seguranca.exemplo.
+$ORIGIN rpz.allow.seguranca.bloqueio.
 
-@   IN SOA localhost. hostmaster.rpz.allow.seguranca.exemplo. (
+@   IN SOA localhost. hostmaster.rpz.allow.seguranca.bloqueio. (
         2026012001 ; serial (YYYYMMDDNN)
         3600       ; refresh
         900        ; retry
@@ -1262,19 +1257,19 @@ $ORIGIN rpz.allow.seguranca.exemplo.
 @   IN NS  localhost.
 
 ; Exemplo (descomente para testar):
-; banco.exemplo        CNAME rpz-passthru.
-; *.banco.exemplo      CNAME rpz-passthru.
+; banco.exemplo.com.br        CNAME rpz-passthru.
+; *.banco.exemplo.com.br      CNAME rpz-passthru.
 EOF
 ```
 
 Crie a RPZ blocklist (segurança):
 
 ```bash
-sudo tee /var/lib/unbound/rpz/rpz.seguranca.exemplo.zone >/dev/null <<'EOF'
+sudo tee /var/lib/unbound/rpz/rpz.seguranca.bloqueio.zone >/dev/null <<'EOF'
 $TTL 60
-$ORIGIN rpz.seguranca.exemplo.
+$ORIGIN rpz.seguranca.bloqueio.
 
-@   IN SOA localhost. hostmaster.rpz.seguranca.exemplo. (
+@   IN SOA localhost. hostmaster.rpz.seguranca.bloqueio. (
         2026012001 ; serial (YYYYMMDDNN)
         3600       ; refresh
         900        ; retry
@@ -1285,16 +1280,16 @@ $ORIGIN rpz.seguranca.exemplo.
 @   IN NS  localhost.
 
 ; Entradas de teste (remova depois)
-teste-malware.exemplo     CNAME .
-*.teste-malware.exemplo   CNAME .
+teste-malware.exemplo.invalid     CNAME .
+*.teste-malware.exemplo.invalid   CNAME .
 EOF
 ```
 
 Permissões:
 
 ```bash
-sudo chown unbound:unbound /var/lib/unbound/rpz/rpz.allow.seguranca.exemplo.zone /var/lib/unbound/rpz/rpz.seguranca.exemplo.zone
-sudo chmod 0644 /var/lib/unbound/rpz/rpz.allow.seguranca.exemplo.zone /var/lib/unbound/rpz/rpz.seguranca.exemplo.zone
+sudo chown unbound:unbound /var/lib/unbound/rpz/rpz.allow.seguranca.bloqueio.zone /var/lib/unbound/rpz/rpz.seguranca.bloqueio.zone
+sudo chmod 0644 /var/lib/unbound/rpz/rpz.allow.seguranca.bloqueio.zone /var/lib/unbound/rpz/rpz.seguranca.bloqueio.zone
 ```
 
 ### 7.8 (Recomendado) Modo sombra (log sem bloquear)
@@ -1338,8 +1333,8 @@ Quando estiver confiante (falsos positivos sob controle), volte para `nxdomain`.
 ### 7.9 Wildcards: por que `dominio` + `*.dominio`
 
 Em feed de ameaças, é comum ver:
-- domínio raiz malicioso (`exemplo.tld`)
-- subdomínios rotativos (`a1.exemplo.tld`, `b2.exemplo.tld`…)
+- domínio raiz malicioso (`exemplo.invalid`)
+- subdomínios rotativos (`a1.exemplo.invalid`, `b2.exemplo.invalid`…)
 
 Por isso o gerador cria sempre:
 - `dominio CNAME .` (bloqueia o raiz)
@@ -1358,7 +1353,7 @@ Use Response IP trigger apenas quando você tiver:
 - fonte extremamente confiável,
 - e uma estratégia forte de allowlist/observabilidade.
 
-Neste guia, isso fica como **leitura complementar**, sem habilitar por padrão.
+Aqui, isso fica como **leitura complementar**, sem habilitar por padrão.
 
 ---
 
@@ -1387,7 +1382,7 @@ sudo tee /etc/unbound/rpz/rpz-allowlist.txt >/dev/null <<'EOF'
 # - permitir um domínio inteiro:
 #   exemplo.com.br
 # - permitir apenas um subdomínio específico:
-#   login.banco.exemplo
+#   login.banco.exemplo.com.br
 EOF
 sudo chown root:unbound /etc/unbound/rpz/rpz-allowlist.txt
 sudo chmod 0640 /etc/unbound/rpz/rpz-allowlist.txt
@@ -1439,10 +1434,10 @@ SOURCES="URLhaus (abuse.ch hostfile) + PhishTank (dump público online-valid.csv
 MIN_BYTES_URLHAUS=2048
 MIN_BYTES_PHISHTANK=256
 
-ZONE_BLOCK_NAME="rpz.seguranca.exemplo"
+ZONE_BLOCK_NAME="rpz.seguranca.bloqueio"
 ZONE_BLOCK_FILE="/var/lib/unbound/rpz/${ZONE_BLOCK_NAME}.zone"
 
-ZONE_ALLOW_NAME="rpz.allow.seguranca.exemplo"
+ZONE_ALLOW_NAME="rpz.allow.seguranca.bloqueio"
 ZONE_ALLOW_FILE="/var/lib/unbound/rpz/${ZONE_ALLOW_NAME}.zone"
 
 ALLOWLIST="/etc/unbound/rpz/rpz-allowlist.txt"
@@ -1490,7 +1485,7 @@ extract_domains_from_urlhaus_hostfile() {
 
 extract_domains_from_phishtank_csv() {
   # PhishTank retorna URLs; extraímos apenas o host (domínio).
-  # Este guia usa o dump público (online-valid.csv). A API existe (informativo),
+  # Aqui o script usa o dump público (online-valid.csv). A API existe (informativo),
   # mas não é necessária aqui.
   #
   # Formato (na prática): cada linha do dump CSV contém múltiplas URLs, incluindo:
@@ -1610,7 +1605,7 @@ extract_domains_from_urlhaus_hostfile "$URLHAUS_FILE" >> "$DOMAINS_RAW"
 
 # Fonte 2: PhishTank (opcional), phishing (dump público)
 #
-# Este guia não exige chave/autenticação. Por padrão, deixamos desativado para respeitar limites/fair use.
+# Aqui o script não exige chave/autenticação. Por padrão, deixamos desativado para respeitar limites/fair use.
 # Para habilitar, altere `ENABLE_PHISHTANK=1` (no topo do script).
 if [[ "${ENABLE_PHISHTANK}" == "1" ]]; then
   PHISHTANK_FILE="$WORKDIR/phishtank.csv"
@@ -1693,9 +1688,10 @@ stage_zone_atomic "$ZONE_ALLOW_NEW" "$ZONE_ALLOW_FILE"
 stage_zone_atomic "$ZONE_BLOCK_NEW" "$ZONE_BLOCK_FILE"
 
 reload_unbound() {
-  # Preferência: unbound-control (reload sem derrubar cache)
+  # Preferência: unbound-control preservando cache, quando possível.
   if command -v unbound-control >/dev/null 2>&1; then
     if unbound-control status >/dev/null 2>&1; then
+      unbound-control reload_keep_cache >/dev/null 2>&1 && return 0
       unbound-control reload >/dev/null 2>&1 && return 0
     fi
   fi
@@ -1931,8 +1927,10 @@ sudo systemctl restart unbound
 
 > Boa prática: faça isso em janela ou com redundância, e depois valide saúde do serviço (seção 12) e o limite efetivo no processo:
 > ```bash
-> pid="$(pgrep -x unbound || true)"
-> [ -n "$pid" ] && cat "/proc/${pid}/limits" | grep -i 'open files'
+> pid="$(pgrep -x unbound)"
+> if [ -n "$pid" ]; then
+>   cat "/proc/${pid}/limits" | grep -i 'open files'
+> fi
 > ```
 
 ---
@@ -2264,7 +2262,7 @@ Crie `/etc/fail2ban/filter.d/unbound-rpz-seguranca.conf`:
 sudo tee /etc/fail2ban/filter.d/unbound-rpz-seguranca.conf >/dev/null <<'EOF'
 [Definition]
 # Exemplo real (formato típico do Unbound):
-# info: rpz: applied [rpz-seguranca] www.exemplo.com. A IN CNAME . 100.64.1.10@56412 www.exemplo.com. A IN
+# info: rpz: applied [rpz-seguranca] www.exemplo.invalid. A IN CNAME . 100.64.1.10@56412 www.exemplo.invalid. A IN
 #
 # Compatibilidade extra:
 # - alguns ambientes usam `rpz-log-name` diferente (ex.: o nome da zona)
@@ -2272,7 +2270,7 @@ sudo tee /etc/fail2ban/filter.d/unbound-rpz-seguranca.conf >/dev/null <<'EOF'
 #
 # Nota: em geral, o `rpz-log-name` é o caminho mais estável (ex.: "rpz-seguranca").
 # Mesmo assim, deixamos compatibilidade com o nome da zona RPZ, caso seu log venha assim.
-failregex = ^.*\brpz:\s+applied\s+(?:\[(?:rpz-seguranca|rpz\.seguranca\.(?:exemplo|bloqueio))\]|rpz-name=(?:rpz-seguranca|rpz\.seguranca\.(?:exemplo|bloqueio))).*\s<HOST>(?:[@#]\d+)?\s.*$
+failregex = ^.*\brpz:\s+applied\s+(?:\[(?:rpz-seguranca|rpz\.seguranca\.bloqueio)\]|rpz-name=(?:rpz-seguranca|rpz\.seguranca\.bloqueio)).*\s<HOST>(?:[@#]\d+)?\s.*$
 ignoreregex =
 EOF
 ```
@@ -2508,7 +2506,7 @@ sudo journalctl -u unbound -f
 2) Simule um bloqueio RPZ usando o domínio de teste:
 
 ```bash
-dig @127.0.0.1 teste-malware.exemplo A +short
+dig @127.0.0.1 teste-malware.exemplo.invalid A +short
 ```
 
 3) Desbanir manualmente:
@@ -2706,7 +2704,7 @@ dig @127.0.0.1 sigfail.verteiltesysteme.net A +dnssec +multi
 Bloqueio RPZ:
 
 ```bash
-dig @127.0.0.1 teste-malware.exemplo A
+dig @127.0.0.1 teste-malware.exemplo.invalid A
 ```
 
 Interpretação:
@@ -2744,7 +2742,7 @@ sudo journalctl -u unbound -n 200 --no-pager
 >
 > **Não rode isso em horário de pico** e não comece com QPS absurdo. Em ISP, faça em janela.
 
-1) Instale ferramentas:
+1) Se você pulou a instalação da seção 2, instale a ferramenta agora:
 
 ```bash
 sudo apt -y install dnsperf
@@ -2864,12 +2862,12 @@ sudo unbound-control reload
 ### 13.2 Rollback da última lista (zonefile)
 
 ```bash
-sudo cp -av /var/lib/unbound/rpz/rpz.allow.seguranca.exemplo.zone.bak /var/lib/unbound/rpz/rpz.allow.seguranca.exemplo.zone \
-  || echo "INFO: backup allowlist não existe (rpz.allow.seguranca.exemplo.zone.bak)."
-sudo cp -av /var/lib/unbound/rpz/rpz.seguranca.exemplo.zone.bak /var/lib/unbound/rpz/rpz.seguranca.exemplo.zone \
-  || echo "INFO: backup blocklist não existe (rpz.seguranca.exemplo.zone.bak)."
+sudo cp -av /var/lib/unbound/rpz/rpz.allow.seguranca.bloqueio.zone.bak /var/lib/unbound/rpz/rpz.allow.seguranca.bloqueio.zone
+sudo cp -av /var/lib/unbound/rpz/rpz.seguranca.bloqueio.zone.bak /var/lib/unbound/rpz/rpz.seguranca.bloqueio.zone
 sudo unbound-control reload
 ```
+
+Se algum `.bak` não existir, pare e confirme primeiro qual foi o último zonefile válido disponível no diretório.
 
 ### 13.3 Desligar o Fail2Ban sem “abrir” o DNS (contingência)
 
@@ -2913,7 +2911,7 @@ dig @127.0.0.1 dnssec.works A +dnssec +noall +answer +comments
 dig @127.0.0.1 dnssec-failed.org A +dnssec +noall +answer +comments
 
 # RPZ (domínio de teste da blocklist do guia): deve resultar em NXDOMAIN quando o bloqueio está ativo
-dig @127.0.0.1 teste-malware.exemplo A +noall +answer +comments
+dig @127.0.0.1 teste-malware.exemplo.invalid A +noall +answer +comments
 ```
 
 ---
@@ -2938,7 +2936,6 @@ dig @127.0.0.1 teste-malware.exemplo A +noall +answer +comments
 
 ### systemd timers (automação sem cron)
 - systemd.timer(5), manual oficial: https://man7.org/linux/man-pages/man5/systemd.timer.5.html
-- systemd.guru, exemplos de `OnCalendar` (inclui `*/6:00:00`): https://systemd.guru/systemd-timer-calendar-events/
 
 ### Fail2Ban + nftables
 - Debian Sources, action `nftables.conf` (referência de tags/Init por família): https://sources.debian.org/src/fail2ban/1.0.2-2/config/action.d/nftables.conf/
@@ -2967,6 +2964,8 @@ dig @127.0.0.1 teste-malware.exemplo A +noall +answer +comments
 - Decreto nº 8.771/2016 (regulamentação, neutralidade e segurança): https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2016/decreto/d8771.htm
 
 ---
+
+## Créditos
 
 Autor: Paulo Rocha  
 Repositório: https://github.com/PauloNRocha
