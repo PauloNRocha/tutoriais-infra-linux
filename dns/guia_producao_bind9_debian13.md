@@ -1004,7 +1004,7 @@ sudo -u bind ls -la /var/cache/bind/slave-rev/IPv6/2001.db8.abcd.x/
 
 > É normal ver arquivos `*.jnl` (journal) e, em zonas com DNSSEC/inline-signing, arquivos `*.signed` e `*.signed.jnl`.
 
-Opcional (se você quer ver a árvore de diretórios no estilo do seu `tree`):
+Se quiser ver a estrutura de diretórios de forma mais visual:
 
 ```bash
 sudo apt install -y tree
@@ -1131,9 +1131,9 @@ sudo -u bind sh -c 'cd / && find /var/lib/bind/master-aut/exemplo.com.br/keys -n
 Use o arquivo KSK encontrado e gere DS com SHA-256:
 
 ```bash
-# Exemplo: se sua KSK for "Kexemplo.com.br.+013+12345.key",
-# passe o caminho SEM a extensão ".key":
-sudo -u bind dnssec-dsfromkey -2 /var/lib/bind/master-aut/exemplo.com.br/keys/Kexemplo.com.br.+013+12345
+# Use o nome real da KSK encontrada no passo anterior, sem a extensão ".key"
+# Exemplo de formato:
+sudo -u bind dnssec-dsfromkey -2 /var/lib/bind/master-aut/exemplo.com.br/keys/Kexemplo.com.br.+013+KEYID_REAL
 ```
 
 > Se aparecer erro procurando `...key.key`, passe o caminho **sem** `.key` (como no exemplo acima).
@@ -1152,7 +1152,7 @@ echo "KSK encontrada: $KSK_KEY"
 Depois, use o caminho retornado acima no `dnssec-dsfromkey`:
 
 ```bash
-sudo -u bind sh -c 'cd / && dnssec-dsfromkey -2 /var/lib/bind/master-aut/exemplo.com.br/keys/Kexemplo.com.br.+013+12345'
+sudo -u bind sh -c 'cd / && dnssec-dsfromkey -2 /var/lib/bind/master-aut/exemplo.com.br/keys/Kexemplo.com.br.+013+KEYID_REAL'
 ```
 
 Se você também assina **reverso** com DNSSEC, gere o DS do reverso do mesmo jeito (um DS por zona):
@@ -1244,21 +1244,24 @@ sudo tail -n 50 /var/log/named/security.log
 
 ### 12.2) Usar filtro do Fail2Ban (preferência: `named-refused`)
 
-No Debian, geralmente existe o filtro:
+No Debian, esse filtro costuma já vir pronto:
 
 ```bash
-ls -1 /etc/fail2ban/filter.d/named-refused.conf
+ls -l /etc/fail2ban/filter.d/named-refused.conf
 ```
 
-Se existir, use ele.
-Crie `/etc/fail2ban/jail.d/named-refused.local`:
+Se o arquivo existir, você pode reutilizar esse filtro em vez de criar outro do zero.
+
+Agora crie a jail:
 
 ```bash
 sudo nano /etc/fail2ban/jail.d/named-refused.local
 ```
 
-> Atenção: **não** é para substituir `/etc/fail2ban/filter.d/named-refused.conf`.  
-> Esse arquivo é o **filtro** (regex). O bloco abaixo é a **jail** (configuração), e deve ficar em `jail.d/`.
+> Importante:
+> - `/etc/fail2ban/filter.d/named-refused.conf` é o **filtro** (regex)
+> - `/etc/fail2ban/jail.d/named-refused.local` é a **jail** (política de uso do filtro)
+> - não substitua o arquivo do filtro quando a ideia é só configurar a jail
 
 ```ini
 [named-refused]
@@ -1281,8 +1284,11 @@ sudo systemctl status fail2ban --no-pager
 sudo fail2ban-client status named-refused
 ```
 
-> Se o `fail2ban-client` reclamar de socket (`/var/run/fail2ban/fail2ban.sock`), é porque o serviço não subiu.  
-> Veja o erro completo com: `sudo journalctl -u fail2ban -n 200 --no-pager`.
+> Em Debian 13 limpo, pode acontecer de o `systemctl restart fail2ban` terminar e o `fail2ban-client` ainda pegar a janela antes do socket ficar pronto.  
+> Se o erro for só `Failed to access socket path: /var/run/fail2ban/fail2ban.sock`, espere alguns segundos e rode o `fail2ban-client` de novo.
+>
+> Se o erro persistir e o `systemctl status fail2ban` não mostrar `Server ready`, aí sim trate como falha real e veja o log completo com:
+> `sudo journalctl -u fail2ban -n 200 --no-pager`.
 
 ### 12.3) Validar regex do filtro (boa prática)
 
@@ -1359,7 +1365,7 @@ Se você realmente quiser “pré-liberar” as redes do NIC.br/Registro.br (opc
 # ignoreip = 127.0.0.1/8 ::1 ... 200.160.0.0/20 200.219.148.0/24 2001:12f8:6::/47 2001:12ff::/32
 ```
 
-> Observação: esses prefixos são grandes (principalmente IPv6). Use somente se você aceitar o trade-off de reduzir a área protegida pelo Fail2Ban.
+> Observação: esses prefixos são grandes, principalmente no IPv6. Use somente se você aceitar que isso reduz a área realmente protegida pelo Fail2Ban.
 
 Para desbanir manualmente:
 
