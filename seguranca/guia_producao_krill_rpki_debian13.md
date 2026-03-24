@@ -1,15 +1,15 @@
-# Guia Operacional de Produção: Krill RPKI com Nginx e nftables no Debian 13
+# Guia de Produção: Krill RPKI no Debian 13 com Nginx e nftables
 
-*Criado em 03 de Janeiro de 2026*
-*Última atualização em 30 de janeiro de 2026*
+*Criado em: 03 de janeiro de 2026*  
+*Última atualização em: 23 de março de 2026*
 
-Este guia detalha o processo completo para instalar, configurar e proteger uma Autoridade Certificadora (CA) de RPKI usando o **Krill (NLnet Labs)** em um servidor **Debian 13 (Trixie)**. Focamos em um ambiente de produção seguro, incluindo a configuração de Nginx como proxy reverso para acesso via HTTPS e o uso de `nftables` para o firewall.
+Montei este guia para deixar registrado um caminho de implantação do **Krill (NLnet Labs)** em **Debian 13 (Trixie)** para uso em produção, com foco em acesso administrativo seguro, publicação RPKI funcional e proteção básica do host com `nftables`.
 
-> **Objetivo:** Ao final deste tutorial, você terá o Krill rodando como um serviço robusto, com acesso administrativo seguro via SSH tunnel ou HTTPS (Nginx + TLS). Sua CA estará configurada com um Parent (como o Registro.br) e um repositório de publicação funcional, permitindo a criação e validação de ROAs (Route Origin Authorizations) e ASPAs para proteger seus prefixos de rede e o trânsito BGP.
+O foco aqui é deixar a CA RPKI operando de forma previsível, com acesso por **SSH tunnel** ou por **HTTPS atrás de Nginx**, e com base suficiente para configurar Parent, Repository, ROAs e ASPAs. O guia não tenta cobrir todos os cenários possíveis de publicação distribuída nem todos os modelos de alta disponibilidade do Krill.
 
 ---
 
-## Índice
+## Índice rápido
 1. [Arquitetura Recomendada (e Portas)](#1)
 2. [Pré‑requisitos e Preparação](#2)
 3. [Instalação do Krill (APT NLnet Labs)](#3)
@@ -86,6 +86,8 @@ sudo apt install -y chrony       # Instala o Chrony, um cliente NTP moderno e ef
 sudo systemctl enable --now chrony # Habilita e inicia o serviço Chrony
 timedatectl status               # Verifica o status da sincronização de tempo
 ```
+
+Se você quiser um passo a passo completo só para NTP, veja também: [guia de produção de servidor NTP interno com Chrony no Debian 13](../sistema/guia_producao_ntp_chrony_debian13.md)
 
 ---
 
@@ -733,7 +735,7 @@ A perda dos dados do Krill pode resultar na perda da sua CA RPKI e, consequentem
 
 > Faça backup **criptografado** e armazene-o **fora do servidor**. A segurança do backup é tão importante quanto a do sistema em produção.
 
-### 14.2 Script Simples de Backup com Retenção
+### 14.2 Script simples de backup com retenção
 
 Crie um script para automatizar o backup diário com retenção de 30 dias.
 
@@ -771,13 +773,52 @@ Defina as permissões de execução para o script:
 sudo chmod 700 /usr/local/sbin/backup-krill.sh # Torna o script executável
 ```
 
-Agende a execução diária com cron (exemplo: 02:00 da manhã):
+Crie um service `oneshot` para rodar o backup:
+
 ```bash
-sudo crontab -e # Abre o editor do crontab
+sudo nano /etc/systemd/system/krill-backup.service
 ```
-Adicione a seguinte linha ao final do arquivo crontab e salve:
-```cron
-0 2 * * * /usr/local/sbin/backup-krill.sh >/dev/null 2>&1 # Executa o script diariamente às 02:00
+
+Conteúdo:
+
+```ini
+[Unit]
+Description=Backup do Krill
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/backup-krill.sh
+```
+
+Crie o timer diário:
+
+```bash
+sudo nano /etc/systemd/system/krill-backup.timer
+```
+
+Conteúdo:
+
+```ini
+[Unit]
+Description=Timer diário de backup do Krill
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+RandomizedDelaySec=30m
+
+[Install]
+WantedBy=timers.target
+```
+
+Ative:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now krill-backup.timer
+systemctl list-timers | grep krill-backup
 ```
 
 ### 14.3 Restauração do backup
@@ -902,6 +943,8 @@ Este é um resumo rápido de práticas que **DEVEM SER EVITADAS** para garantir 
 - ASPA (RFC 9319): https://www.rfc-editor.org/rfc/rfc9319.html
 
 ---
+
+## Créditos
 
 Autor: Paulo Rocha  
 Repositório: https://github.com/PauloNRocha

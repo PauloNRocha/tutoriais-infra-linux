@@ -119,6 +119,8 @@ sudo hostnamectl set-hostname ns2.exemplo.com.br
 
 Em instalação limpa, também vale ajustar `/etc/hosts` para o hostname novo resolver localmente. Isso evita aviso de `sudo` do tipo `unable to resolve host ...`.
 
+Isso **não** substitui DNS recursivo do sistema. Aqui a ideia é só garantir que o próprio hostname do servidor resolva localmente, sem depender de consulta externa.
+
 No **ns1**:
 
 ```bash
@@ -470,6 +472,10 @@ sudo systemctl restart named
 Isso só faz sentido se você **habilitou recursão** no passo 7.1 (ou se você tem um resolvedor local separado).
 
 > Se seu servidor é **autoritativo puro** (`recursion no;`), **não** aponte o `/etc/resolv.conf` para `127.0.0.1/::1` — senão o próprio servidor não vai conseguir resolver nomes externos (apt, curl, etc.).
+>
+> Resumindo a diferença:
+> - `/etc/hosts` resolve nomes locais específicos, como o hostname do próprio servidor;
+> - `/etc/resolv.conf` define quem o sistema consulta para resolver nomes em geral.
 
 #### 7.2.1) Descubra quem “manda” no `/etc/resolv.conf`
 
