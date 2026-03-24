@@ -334,11 +334,10 @@ logging {
   category default { default_file; };
   category general { default_file; };
   category security { security_file; };
-  # No BIND, eventos de RRL aparecem em mais de uma categoria:
-  # - `rate-limit`: avisos/resumos (início/fim, tabela, etc.)
-  # - `query-errors`: pode incluir eventos "slip/drop" por RRL (depende versão/config)
+  # No BIND, eventos de RRL aparecem principalmente em `rate-limit`.
+  # Já `query-errors` mistura erros gerais de consulta, então aqui ele fica no log padrão.
   category rate-limit { ratelimit_file; };
-  category query-errors { ratelimit_file; default_file; };
+  category query-errors { default_file; };
 };
 ```
 
@@ -779,6 +778,9 @@ $TTL 86400
 50  IN PTR  exemplo.com.br.
 60  IN PTR  mail.exemplo.com.br.
 ```
+
+> Observação importante sobre serial: com `inline-signing` ativo, continue tratando o arquivo `.hosts`/`.rev` como fonte da verdade.  
+> Quando você alterar a zona, incremente o serial no arquivo fonte e prefira recarregar a zona com `rndc reload exemplo.com.br` em vez de reiniciar o `named` inteiro.
 
 #### 9.3.1) (Opcional) Uso de `$GENERATE` em zonas reversas (IPv4)
 
@@ -1262,11 +1264,8 @@ findtime = 10m
 bantime = 12h
 
 # Se você usa nftables (recomendado)
-banaction = nftables-multiport
+banaction = nftables[type=multiport]
 ```
-
-> Se no seu sistema não existir a ação `nftables-multiport`, use a variação genérica:
-> `banaction = nftables[type=multiport]`
 
 Reinicie:
 
@@ -1552,6 +1551,26 @@ O objetivo aqui é confirmar que **só o Secondary autorizado** consegue transfe
 
 Se o passo (1) der certo e imprimir a zona inteira, você está com **vazamento de zona** e precisa revisar `allow-transfer` (deve ser TSIG, não `any;`).
 
+### 14.6) Operação diária com `rndc`
+
+Para operação normal, prefira `rndc` em vez de reiniciar o serviço inteiro a cada ajuste.
+
+Comandos úteis:
+
+```bash
+sudo rndc status
+sudo rndc reload exemplo.com.br
+sudo rndc retransfer exemplo.com.br
+sudo rndc zonestatus exemplo.com.br
+```
+
+Uso prático:
+
+- `rndc status`: visão rápida do `named`
+- `rndc reload exemplo.com.br`: recarrega só a zona alterada
+- `rndc retransfer exemplo.com.br`: força nova transferência no Secondary
+- `rndc zonestatus exemplo.com.br`: ajuda bastante em troubleshooting de DNSSEC e transferência
+
 ---
 
 <a id="15"></a>
@@ -1635,6 +1654,24 @@ Sintoma típico: o `named` não sobe (ou sobe sem log) e o journal mostra algo c
    sudo apparmor_parser -r /etc/apparmor.d/usr.sbin.named
    sudo systemctl restart named
    ```
+
+### 15.6) Secondary recebe `NOTAUTH` ou `bad key` na transferência
+
+Esse é um dos erros mais comuns quando TSIG está errado entre os dois lados.
+
+Checklist rápido:
+
+- confirme que o nome da chave é exatamente o mesmo nos dois servidores
+- confirme que o `secret` em `/etc/bind/keys.conf` é idêntico nos dois lados
+- confirme que o `server { keys { ... } }` e o `masters/primaries { ... key ...; }` estão apontando para a mesma chave
+- veja os logs do `named` procurando por `TSIG`, `NOTAUTH` ou `bad key`
+
+Comandos úteis:
+
+```bash
+sudo grep -n 'key "xfr-exemplo"' /etc/bind/keys.conf
+sudo journalctl -u named -n 100 --no-pager | grep -Ei 'tsig|notauth|bad key'
+```
 
 ---
 
