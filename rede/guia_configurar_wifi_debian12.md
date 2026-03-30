@@ -3,9 +3,9 @@
 *Criado em: 29 de setembro de 2025*  
 *Última atualização em: 18 de março de 2026*
 
-Montei este guia para deixar registrado um caminho previsível para configurar Wi-Fi no **Debian 12 (Bookworm)**, cobrindo dois cenários comuns: **servidor** com `ifupdown` + `wpa_supplicant` e **desktop/notebook** com `NetworkManager` via `nmcli`.
+Wi-Fi no Debian costuma ser tranquilo até você cair em conflito entre `ifupdown`, `wpa_supplicant` e `NetworkManager`. Este guia registra um caminho previsível para configurar isso no **Debian 12 (Bookworm)**, cobrindo dois cenários comuns: **servidor** com `ifupdown` + `wpa_supplicant` e **desktop/notebook** com `nmcli`.
 
-O foco aqui é colocar a interface no ar com segurança e sem conflito entre gerenciadores de rede. O guia não cobre modo AP/hotspot nem automações mais exóticas.
+A ideia aqui é colocar a interface no ar com segurança e sem disputa entre gerenciadores de rede. O guia não cobre modo AP/hotspot nem automações mais exóticas.
 
 Veja também: [guia de configuração de rede no Debian 12/13 (Ethernet)](./guia_configurar_rede_debian12_13.md)
 

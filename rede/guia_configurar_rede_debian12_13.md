@@ -3,7 +3,7 @@
 *Criado em: 29 de setembro de 2025*  
 *Última atualização em: 17 de março de 2026*
 
-Montei este guia para deixar registrado um jeito estável e previsível de configurar rede cabeada no **Debian 12/13**. O foco principal aqui é `ifupdown`, mas o guia também traz alternativa com `NetworkManager` e alguns cenários mais avançados para quando o básico já estiver funcionando.
+Rede cabeada em Debian parece simples até o dia em que a interface não sobe, o `NetworkManager` entra no caminho ou o IP fixo fica diferente do esperado. Este guia junta um jeito estável e previsível de configurar isso no **Debian 12/13**, com foco principal em `ifupdown`, mas também trazendo alternativa com `NetworkManager` e alguns cenários mais avançados.
 
 Observação prática:
 

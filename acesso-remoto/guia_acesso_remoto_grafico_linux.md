@@ -3,9 +3,9 @@
 *Criado em: 04 de dezembro de 2025*  
 *Última atualização em: 14 de março de 2026*
 
-Fiz este guia para deixar registrado um caminho prático de acesso remoto gráfico em servidor Debian 12, quando SSH sozinho não resolve e eu realmente preciso entrar em interface gráfica. O conteúdo cobre **XRDP**, **AnyDesk** e **TeamViewer**, além de alguns problemas comuns que costumam aparecer nesse tipo de cenário.
+Tem situação em que SSH não basta e eu realmente preciso ver a interface gráfica do servidor. Este guia junta o caminho que usei no Debian 12 para isso, cobrindo **XRDP**, **AnyDesk** e **TeamViewer**, além dos problemas mais comuns que aparecem quando esse tipo de acesso começa a dar trabalho.
 
-Ele não é um guia de acesso remoto seguro exposto para Internet do zero. O foco aqui é instalação, uso controlado e troubleshooting.
+Não é um guia de hardening completo para expor acesso gráfico na internet. A ideia aqui é instalação, uso controlado e troubleshooting.
 
 ---
 

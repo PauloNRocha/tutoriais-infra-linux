@@ -3,9 +3,9 @@
 *Criado em: 25 de setembro de 2025*  
 *Última atualização em: 11 de março de 2026*
 
-Montei este guia para deixar registrado o processo que funcionou aqui para instalar o **driver proprietário NVIDIA**, habilitar o **CUDA Toolkit** e configurar a **renderização híbrida (Intel + NVIDIA)** no Ubuntu 24.04.
+Esse guia nasceu da necessidade de deixar um procedimento reproduzível para instalar o **driver proprietário NVIDIA**, habilitar o **CUDA Toolkit** e fazer a **renderização híbrida (Intel + NVIDIA)** funcionar direito no Ubuntu 24.04.
 
-O cenário principal foi notebook **Lenovo IdeaPad com GPU NVIDIA GTX 1650 Mobile**, mas boa parte do fluxo também serve como referência para outros casos parecidos.
+O cenário principal foi um notebook **Lenovo IdeaPad com GPU NVIDIA GTX 1650 Mobile**, mas boa parte do fluxo também serve como referência para outros casos parecidos.
 
 > **Ambiente testado:** Ubuntu 24.04 LTS (Noble Numbat).
 

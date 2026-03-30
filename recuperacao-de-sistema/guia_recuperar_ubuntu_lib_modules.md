@@ -3,7 +3,7 @@
 *Criado em: 03 de dezembro de 2025*  
 *Última atualização em: 11 de março de 2026*
 
-Fiz este guia para deixar anotado o que fazer quando um Ubuntu para de funcionar depois da remoção acidental do diretório `/lib/modules`, que é onde ficam os módulos e dependências do kernel.
+Apagar `/lib/modules` costuma transformar um sistema funcionando em um problema sério em poucos minutos. Este guia registra o que fazer quando um Ubuntu deixa de funcionar por causa dessa remoção, que atinge justamente os módulos e dependências do kernel.
 
 > [!WARNING]
 > **Guia de emergência**: isso aqui é para cenário de desastre. O ideal continua sendo ter backup, mas se o sistema já quebrou, este roteiro ajuda a recuperar o boot e reconstruir os módulos do kernel com mais previsibilidade.

@@ -3,7 +3,7 @@
 *Criado em: 04 de dezembro de 2025*  
 *Última atualização em: 14 de março de 2026*
 
-Montei este guia para deixar documentado um jeito simples e controlado de usar **RPZ (Response Policy Zones)** no BIND9 para bloquear domínios maliciosos ou indesejados. A ideia aqui não é cobrir implantação completa do BIND, e sim a parte prática de criar uma zona de política, aplicar bloqueios e validar se o filtro realmente entrou em funcionamento.
+RPZ no BIND9 é uma dessas coisas que parecem simples no conceito, mas costumam gerar dúvida na hora de colocar para funcionar sem bagunçar o resolvedor. Este guia foca justamente nessa parte prática: criar a zona de política, aplicar bloqueios e confirmar que o filtro entrou de verdade.
 
 Pré-requisito:
 

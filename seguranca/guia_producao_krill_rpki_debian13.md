@@ -1,11 +1,13 @@
 # Guia de Produção: Krill RPKI no Debian 13 com Nginx e nftables
 
 *Criado em: 03 de janeiro de 2026*  
-*Última atualização em: 23 de março de 2026*
+*Última atualização em: 25 de março de 2026*
 
-Montei este guia para deixar registrado um caminho de implantação do **Krill (NLnet Labs)** em **Debian 13 (Trixie)** para uso em produção, com foco em acesso administrativo seguro, publicação RPKI funcional e proteção básica do host com `nftables`.
+Krill é o tipo de serviço que parece pequeno no começo, mas vira peça crítica muito rápido quando entra em produção. Este guia registra a implantação que fui consolidando no **Debian 13 (Trixie)**, com acesso administrativo seguro, publicação RPKI funcional e proteção básica do host com `nftables`.
 
-O foco aqui é deixar a CA RPKI operando de forma previsível, com acesso por **SSH tunnel** ou por **HTTPS atrás de Nginx**, e com base suficiente para configurar Parent, Repository, ROAs e ASPAs. O guia não tenta cobrir todos os cenários possíveis de publicação distribuída nem todos os modelos de alta disponibilidade do Krill.
+A ideia aqui é deixar a CA RPKI operando de forma previsível, com acesso por **SSH tunnel** ou por **HTTPS atrás de Nginx**, e com base suficiente para configurar Parent, Repository, ROAs e ASPAs. O guia não tenta cobrir todos os cenários possíveis de publicação distribuída nem todos os modelos de alta disponibilidade do Krill.
+
+> **Versão validada:** este guia foi validado em Debian 13 com **Krill 0.16.0**.
 
 ---
 
@@ -121,6 +123,8 @@ sudo apt install -y krill          # Instala o serviço Krill RPKI
 
 Verifique se o Krill foi instalado corretamente e está rodando.
 
+Na instalação limpa, o pacote pode vir **instalado mas parado**. O comando abaixo resolve isso:
+
 ```bash
 sudo systemctl enable --now krill  # Garante que o Krill inicie automaticamente com o sistema
 sudo systemctl status krill --no-pager # Verifica o status atual do serviço Krill
@@ -152,6 +156,15 @@ sudo grep -E '^(admin_token|auth_token)\s*=' /etc/krill.conf # Localiza o token 
 
 > **Atenção:** **Guarde este token** em um gerenciador de senhas seguro. Ele é a credencial inicial para acesso administrativo à interface do Krill.
 
+> **Nota prática (Krill 0.16.0):** em instalação limpa, o `/etc/krill.conf` costuma vir bem enxuto, normalmente com algo como:
+> - `log_type`
+> - `storage_uri`
+> - `admin_token`
+>
+> Ou seja: você normalmente complementa esse arquivo com os ajustes do seu ambiente, em vez de receber tudo pronto no pacote.
+>
+> **Outra diferença importante da 0.16.0:** o Krill ficou mais rígido com configuração inválida. Se você deixar opção desconhecida ou sintaxe errada no `krill.conf`, o serviço pode simplesmente se recusar a subir.
+
 ### 4.2 Ajustes Recomendados para Produção
 
 > **Importante:** Antes de fazer qualquer alteração, faça um backup do arquivo de configuração.
@@ -169,13 +182,15 @@ sudo nano /etc/krill.conf # Abre o arquivo de configuração para edição
 Exemplo de configuração (ajuste para o seu ambiente e domínio):
 ```toml
 # Guarda dados/estado do Krill (contém chaves criptográficas importantes)
-data_dir = "/var/lib/krill/data/"
+storage_uri = "/var/lib/krill/data/"
 
 # O Krill escutará apenas localmente (recomendado para segurança)
 ip = "127.0.0.1"
 port = 3000
 
-# URL público FINAL da sua interface Krill (DEVE terminar com /)
+# URL público FINAL do serviço Krill (DEVE terminar com /)
+# Se você ainda está em laboratório ou usando só SSH tunnel, o padrão localhost pode servir temporariamente.
+# Para Parent/Repository externos, ajuste para a URI pública final.
 service_uri = "https://rpki.seudominio.com/"
 
 # Token de administrador (mantenha forte e NÃO compartilhe)
@@ -183,7 +198,7 @@ admin_token = "COLE_UM_TOKEN_FORTE_AQUI" # Substitua pelo token gerado ou um nov
 
 # Configuração HTTPS do Krill:
 # - padrão: HTTPS com certificado autoassinado (útil para SSH tunnel)
-# - existing: usa certificado já existente no data_dir/ssl/
+# - existing: usa certificado já existente na área de dados do Krill
 # - disable: HTTP (USE SOMENTE se atrás de um proxy TLS confiável como Nginx)
 #
 # https_mode = "disable" # Descomente e ajuste conforme seu modelo de acesso
@@ -191,10 +206,11 @@ admin_token = "COLE_UM_TOKEN_FORTE_AQUI" # Substitua pelo token gerado ou um nov
 
 > **ATENÇÃO:** Se você estiver usando um proxy TLS (como Nginx com Let\'s Encrypt) para expor a interface do Krill na porta 443, configure `https_mode = "disable"` no Krill. **NUNCA exponha a UI do Krill diretamente com HTTPS interno (autoassinado) para a internet em produção.** Isso evita avisos de segurança e garante que a criptografia seja gerenciada pelo proxy.
 
-> **Reforço sobre `service_uri`:** Este parâmetro é crucial para o correto funcionamento do RPKI.
-> - Deve ser um **URL público** (ex: `https://rpki.seudominio.com/`).
-> - Deve usar **HTTPS válido** (o Nginx com Let's Encrypt cuidará disso no Modelo B).
-> - **DEVE terminar com uma barra (`/`)**. Muitos problemas com Parents e Repositories ocorrem devido a um `service_uri` incorreto.
+> **Reforço sobre `service_uri`:**
+> - em instalação padrão do `0.16.0`, o Krill pode subir usando `https://localhost:3000/`
+> - isso é suficiente para laboratório e acesso só por SSH tunnel
+> - se o Krill for falar com Parent/Repository externos, aí sim ajuste para uma URI pública válida
+> - **deve terminar com uma barra (`/`)**
 
 Para gerar um novo token forte (se você quiser trocar o padrão):
 ```bash
@@ -507,6 +523,14 @@ Com o Krill rodando e acessível, o próximo passo é configurar sua Autoridade 
 2) Faça login utilizando o `admin_token` (ou o usuário multi-user configurado).
 3) Crie sua **CA Handle** (um nome interno para identificar sua CA, ex.: `isp-exemplo-br`).
 
+Dica operacional:
+
+```bash
+krillc info
+```
+
+Esse comando local já funciona bem na `0.16.0` e ajuda a confirmar rapidamente versão, tempo de uptime e se o cliente está falando com o servidor.
+
 ### 7.1 Fluxo com Registro.br (Parent)
 
 Se seu Parent for o Registro.br, siga este fluxo:
@@ -516,6 +540,12 @@ Se seu Parent for o Registro.br, siga este fluxo:
 3)  Cole o conteúdo do Child Request XML no campo apropriado e habilite o serviço RPKI.
 4)  Copie o **Parent Response XML** gerado pelo Registro.br.
 5)  **No Krill:** Cole o conteúdo do Parent Response XML na seção "Parents" e confirme a configuração.
+
+Se você precisar forçar uma nova leitura do Parent depois:
+
+```bash
+krillc parents refresh --ca isp-exemplo-br
+```
 
 ---
 
@@ -676,7 +706,7 @@ Esta seção é para casos específicos onde a publicação remota não está di
 2)  Inicialize o Publication Server do Krill com esses URIs.
     -   `krillc pubserver server init --rrdp https://rpki-pub.seudominio.com/rrdp/ --rsync rsync://rpki-pub.seudominio.com/repo/`
 3)  Sirva os arquivos RRDP via web server (Nginx):
-    -   Publique o diretório `$DATA_DIR/repo/rrdp` (ex: `/var/lib/krill/data/repo/rrdp`) no Nginx.
+    -   Publique o diretório apontado pelo `storage_uri`, normalmente `/var/lib/krill/data/repo/rrdp`, no Nginx.
     -   Configure o Nginx para evitar cache longo para o arquivo `notification.xml`, pois ele muda com frequência.
 4)  Se você for publicar via rsync, libere a porta `873/tcp` no seu firewall `nftables`.
 
@@ -727,11 +757,11 @@ curl -k https://127.0.0.1:3000/metrics | head # Ignora o certificado autoassinad
 
 A perda dos dados do Krill pode resultar na perda da sua CA RPKI e, consequentemente, na invalidação dos seus ROAs. **Um backup regular e seguro é indispensável.**
 
-> **ATENÇÃO:** Nunca migre um Krill para outro servidor sem levar **TODO** o diretório `data_dir` (`/var/lib/krill/data/`) e o arquivo `/etc/krill.conf`. A perda ou inconsistência desses dados pode causar a perda irrecuperável da sua CA.
+> **ATENÇÃO:** Nunca migre um Krill para outro servidor sem levar **TODO** o conteúdo do `storage_uri` (geralmente `/var/lib/krill/data/`) e o arquivo `/etc/krill.conf`. A perda ou inconsistência desses dados pode causar a perda irrecuperável da sua CA.
 
 ### 14.1 O que Deve Entrar no Backup
 -   **Configuração:** O arquivo `/etc/krill.conf`.
--   **Dados/Estado (Crítico):** O diretório `data_dir` (geralmente `/var/lib/krill/data/`). Este diretório contém as chaves criptográficas da sua CA.
+-   **Dados/Estado (Crítico):** O caminho definido em `storage_uri` (geralmente `/var/lib/krill/data/`). Esse diretório contém as chaves criptográficas da sua CA.
 
 > Faça backup **criptografado** e armazene-o **fora do servidor**. A segurança do backup é tão importante quanto a do sistema em produção.
 
@@ -833,7 +863,7 @@ Em caso de desastre, siga estes passos para restaurar:
     ```bash
     sudo tar -xzf /caminho/para/seu/backup/krill-backup-YYYYMMDD-HHMM.tar.gz -C /
     ```
-3)  Ajuste as permissões do diretório `data_dir` (o proprietário deve ser `krill:krill`):
+3)  Ajuste as permissões do diretório definido em `storage_uri` (o proprietário deve ser `krill:krill`):
     ```bash
     sudo chown -R krill:krill /var/lib/krill/
     ```
@@ -905,7 +935,7 @@ Antes de considerar sua instalação completa, revise estes pontos:
 -   CA, Parent e Repository: Sua CA está criada, e a comunicação com o Parent e o Repositório de Publicação está funcionando?
 -   ROAs: Seus ROAs estão criados no Krill e foram validados com sucesso por ferramentas externas (ex: RIPE Validator)?
 -   ASPA: Seus objetos ASPA estão criados no Krill e foram validados com sucesso por ferramentas externas?
--   Backup: O script de backup está configurado e funcionando, salvando o `krill.conf` e o `data_dir` regularmente em local seguro?
+-   Backup: O script de backup está configurado e funcionando, salvando o `krill.conf` e o conteúdo do `storage_uri` regularmente em local seguro?
 
 ---
 
@@ -916,10 +946,10 @@ Este é um resumo rápido de práticas que **DEVEM SER EVITADAS** para garantir 
 
 -   **Não Expor a Porta 3000/tcp Diretamente:** A porta padrão do Krill (`3000/tcp`) é para acesso local. Nunca abra esta porta diretamente no firewall para a internet.
 -   **Não Usar HTTP Público para a UI:** Jamais exponha a interface web do Krill via HTTP (porta 80) publicamente. Sempre use HTTPS (porta 443) e, idealmente, um proxy reverso.
--   **Não Esquecer o Backup:** A perda do diretório `data_dir` ou do `krill.conf` significa a perda da sua CA RPKI. Faça backups criptografados e fora do servidor.
+-   **Não Esquecer o Backup:** A perda do conteúdo definido em `storage_uri` ou do `krill.conf` significa a perda da sua CA RPKI. Faça backups criptografados e fora do servidor.
 -   **Não Definir `maxLength` Incorretamente:** Um `maxLength` muito amplo pode diluir a proteção do seu ROA. Se você anuncia um `/24`, use `maxLength = 24`.
 -   **Não Expor o Endpoint `/metrics`:** O endpoint `/metrics` não tem autenticação. Bloqueie o acesso público a ele via Nginx ou firewall.
--   **Não Migrar o Servidor sem o `data_dir` e `krill.conf`:** A migração de um Krill requer que todo o estado (configuração e dados) seja movido. Não negligencie isso.
+-   **Não Migrar o Servidor sem o `storage_uri` e o `krill.conf`:** A migração de um Krill requer que todo o estado (configuração e dados) seja movido. Não negligencie isso.
 -   **Não Ignorar a Sincronização de Tempo:** A validade dos certificados RPKI depende de um relógio de sistema preciso. Garanta que o Chrony (ou outro serviço NTP) esteja funcionando.
 -   **Não Incluir ASNs Incorretos no ASPA:** Adicionar ASNs que não são seus provedores de trânsito (ex: IXPs, clientes) na configuração ASPA pode causar validações negativas.
 

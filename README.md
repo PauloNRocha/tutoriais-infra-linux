@@ -25,7 +25,8 @@ Pode acontecer de algo não funcionar para você exatamente da mesma forma que f
 ## O que você vai encontrar aqui
 
 A maior parte dos guias aqui é voltada para ambiente de produção, com foco em Linux, redes e ISP. Sempre que dá, prefiro usar software livre e de código aberto.
-Também tento deixar os passos bem detalhados, porque muita coisa depois vira consulta para mim mesmo.
+
+Também tento deixar os passos bem detalhados, porque muita coisa depois vira consulta para mim mesmo, principalmente quando preciso repetir algum procedimento meses depois.
 
 ## Índice de tutoriais
 
@@ -114,6 +115,6 @@ Também tento deixar os passos bem detalhados, porque muita coisa depois vira co
 
 Esse repositório é público porque, além de me ajudar a manter tudo centralizado e documentado, pode servir para outras pessoas que lidam com problemas parecidos.
 
-Se algum guia te ajudar, ótimo. 
+Se algum guia te ajudar, melhor ainda. Se não encaixar exatamente no seu ambiente, use como base e adapte para a sua realidade.
 
 GitHub: https://github.com/PauloNRocha

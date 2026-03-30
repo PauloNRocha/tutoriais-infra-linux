@@ -3,7 +3,7 @@
 *Criado em: 23 de janeiro de 2026*  
 *Última atualização em: 23 de março de 2026*  
 
-Montei este guia para deixar registrado um desenho previsível de **resolver recursivo com Unbound** em **Debian 13 (Trixie)**, pensado para **ISP** e com foco em segurança operacional. Ele cobre **DNSSEC**, **QNAME Minimization**, **RPZ** para feeds de ameaça e a parte de automação que mantém isso rodando sem depender de intervenção manual toda hora.
+No cenário de ISP, resolvedor recursivo precisa ser previsível, aguentar carga e não virar problema de segurança. Este guia registra a configuração que usei com **Unbound** no **Debian 13 (Trixie)**, cobrindo **DNSSEC**, **QNAME Minimization**, **RPZ** para feeds de ameaça e a automação que mantém tudo rodando sem intervenção manual o tempo inteiro.
 
 Ele combina as seguintes características e boas práticas:
 

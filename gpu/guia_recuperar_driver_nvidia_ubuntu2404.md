@@ -3,9 +3,9 @@
 *Criado em: 03 de dezembro de 2025*  
 *Última atualização em: 10 de março de 2026*
 
-Fiz este guia para deixar anotado o processo que costumo seguir quando preciso recuperar o driver da NVIDIA no Ubuntu 24.04 ou evitar quebrar tudo de novo depois de update de kernel, troca de driver ou tentativa de instalação via `.run`.
+Esse é o roteiro que eu costumo seguir quando preciso recuperar o driver da NVIDIA no Ubuntu 24.04 ou quando quero evitar quebrar tudo de novo depois de update de kernel, troca de driver ou tentativa de instalação via `.run`.
 
-O foco aqui é notebook híbrido com Intel + NVIDIA, mas boa parte do fluxo também serve como referência para outros cenários. O guia cobre instalação via `.run` e via `apt`, diferença entre kernel **genérico vs OEM**, uso de PRIME/Optimus e correções para o erro **`unable to load the nvidia-drm kernel module`**.
+O foco principal é notebook híbrido com Intel + NVIDIA, mas boa parte do fluxo também serve para outros cenários. O guia cobre instalação via `.run` e via `apt`, diferença entre kernel **genérico vs OEM**, uso de PRIME/Optimus e correções para o erro **`unable to load the nvidia-drm kernel module`**.
 
 ---
 

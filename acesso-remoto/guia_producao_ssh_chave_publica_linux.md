@@ -2,9 +2,9 @@
 
 *Criado em: 30 de janeiro de 2026*  
 
-Montei este guia para deixar registrado um padrão de acesso SSH por **chave pública** em produção: **múltiplos servidores Linux**, **porta customizada**, **login somente por chave** e acesso com **usuário comum + sudo**, sem login direto como `root`.
+Quando o ambiente começa a ter mais de um servidor, mais de uma chave e mais de um operador, acesso SSH vira bagunça muito fácil. Este guia registra o padrão que eu prefiro para produção: **chave pública**, **porta customizada**, **usuário comum + sudo** e nada de login direto como `root`.
 
-O foco aqui é deixar o acesso previsível e fácil de manter: saber **qual chave** está sendo usada, reduzir risco de lockout durante endurecimento do SSH e evitar bagunça quando existe mais de um servidor ou mais de uma identidade no cliente.
+A intenção aqui é deixar o acesso previsível e fácil de manter: saber **qual chave** está em uso, reduzir risco de lockout e evitar confusão no cliente quando existem várias identidades.
 
 ---
 

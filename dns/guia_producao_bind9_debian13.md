@@ -3,7 +3,7 @@
 *Criado em: 08 de janeiro de 2026*  
 *Última atualização em: 23 de março de 2026*
 
-Montei este guia para deixar registrado um padrão de implantação de **BIND9 autoritativo** no **Debian 13 (Trixie)**, com dois servidores, transferência de zona autenticada por **TSIG**, assinatura automática com **DNSSEC** e proteção básica com **nftables** e **Fail2Ban**.
+Servidor DNS autoritativo é um daqueles serviços em que detalhe pequeno vira problema grande muito rápido. Este guia registra o caminho que adotei no **Debian 13 (Trixie)** para subir **BIND9** com dois servidores, transferência autenticada por **TSIG**, assinatura automática com **DNSSEC** e proteção básica com **nftables** e **Fail2Ban**.
 
 Veja também: [guia de recuperação de zona BIND9 com DNSSEC após erro de sintaxe](./guia_producao_bind9_recuperacao_zona_dnssec.md)
 
