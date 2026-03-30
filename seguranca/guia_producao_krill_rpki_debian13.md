@@ -5,9 +5,7 @@
 
 Krill é o tipo de serviço que parece pequeno no começo, mas vira peça crítica muito rápido quando entra em produção. Este guia registra a implantação que fui consolidando no **Debian 13 (Trixie)**, com acesso administrativo seguro, publicação RPKI funcional e proteção básica do host com `nftables`.
 
-A ideia aqui é deixar a CA RPKI operando de forma previsível, com acesso por **SSH tunnel** ou por **HTTPS atrás de Nginx**, e com base suficiente para configurar Parent, Repository, ROAs e ASPAs. O guia não tenta cobrir todos os cenários possíveis de publicação distribuída nem todos os modelos de alta disponibilidade do Krill.
-
-> **Versão validada:** este guia foi validado em Debian 13 com **Krill 0.16.0**.
+A ideia aqui é deixar a CA RPKI operando de forma previsível, com acesso por **SSH tunnel** ou por **HTTPS atrás de Nginx**, e com base suficiente para configurar Parent, Repository, ROAs e ASPAs. Os exemplos e observações deste guia seguem a linha do **Krill 0.16.0**.
 
 ---
 
@@ -205,6 +203,8 @@ admin_token = "COLE_UM_TOKEN_FORTE_AQUI" # Substitua pelo token gerado ou um nov
 ```
 
 > **ATENÇÃO:** Se você estiver usando um proxy TLS (como Nginx com Let\'s Encrypt) para expor a interface do Krill na porta 443, configure `https_mode = "disable"` no Krill. **NUNCA exponha a UI do Krill diretamente com HTTPS interno (autoassinado) para a internet em produção.** Isso evita avisos de segurança e garante que a criptografia seja gerenciada pelo proxy.
+
+> Neste desenho, o Krill fica em `http://127.0.0.1:3000` e o HTTPS público termina no Nginx.
 
 > **Reforço sobre `service_uri`:**
 > - em instalação padrão do `0.16.0`, o Krill pode subir usando `https://localhost:3000/`
@@ -596,14 +596,14 @@ Enquanto os ROAs validam **quem** pode originar um prefixo, o **ASPA** valida **
 > - **ROA diz:** "O prefixo `192.0.2.0/24` só pode ser anunciado pelo `AS65530`."
 > - **ASPA diz:** "O `AS65530` (ASN do exemplo) só deve ser visto na internet através dos provedores de trânsito `AS65531` e `AS65532`."
 
-### ASPA via Interface Web (Krill 0.15+)
+### ASPA via Interface Web
 
-Embora parte da documentação oficial ainda descreva o gerenciamento de ASPA apenas via CLI ou API, o Krill 0.15.x já oferece suporte completo à criação, edição e remoção de ASPAs diretamente pela interface web.
+As versões atuais do Krill já oferecem suporte à criação, edição e remoção de ASPAs diretamente pela interface web.
 
 A configuração pode ser feita acessando:
 `CA` → `ASPAs` → `Add ASPA`
 
-> **Nota:** A documentação oficial do Krill ainda pode mencionar ASPA apenas via CLI/API. No entanto, versões recentes (0.15+) já incluem suporte nativo via UI.
+> **Nota:** a documentação do Krill já contempla esse suporte nas versões atuais, mas vale sempre conferir a versão instalada quando você estiver comparando interface, CLI e exemplos mais antigos.
 
 ### Passos Práticos
 
@@ -727,11 +727,11 @@ sudo journalctl -u krill -f # Acompanha os logs do serviço Krill em tempo real
 O Krill expõe métricas no formato Prometheus no endpoint `/metrics`.
 
 ```bash
-# Se o Krill estiver no HTTPS padrão (autoassinado):
-curl -k https://127.0.0.1:3000/metrics | head # Ignora o certificado autoassinado para obter as métricas
+# Se o Krill estiver em HTTP local (`https_mode = "disable"`):
+curl http://127.0.0.1:3000/metrics | head
 
-# Se o Krill estiver em HTTP (https_mode = "disable"):
-# curl http://127.0.0.1:3000/metrics | head
+# Se você estiver usando o HTTPS interno padrão do Krill (autoassinado):
+# curl -k https://127.0.0.1:3000/metrics | head
 ```
 
 > **Atenção:** O endpoint `/metrics` do Krill **não** possui autenticação. Ele **NÃO** deve ser exposto publicamente na internet. Se você estiver usando Nginx como proxy, certifique-se de que o Nginx está configurado para **bloquear** o acesso externo a `/metrics`, como mostrado na seção [5.2.5 Configurar o Proxy HTTPS para o Krill](#5.2.5).
@@ -885,7 +885,7 @@ Em caso de desastre, siga estes passos para restaurar:
 
 Para ambientes maiores, onde múltiplos administradores precisam gerenciar o Krill, é preferível usar autenticação com **usuários nomeados** em vez de compartilhar um único `admin_token`.
 
-> **Nota:** Em ambientes pequenos, um único `admin_token` é aceitável, desde que o acesso à interface do Krill seja estritamente protegido por mecanismos como VPN ou SSH tunnel.
+> **Nota:** em ambiente pequeno, `config-file` pode resolver bem. Em ambiente maior ou mais crítico, a própria documentação do Krill recomenda olhar com carinho para **OpenID Connect (OIDC)** em vez de manter usuários e senhas locais no `krill.conf`.
 
 ### 15.1 Gerar Hash e Salt para um Novo Usuário
 
@@ -894,6 +894,11 @@ O Krill CLI pode gerar o hash e salt de senha para um novo usuário.
 krillc config user --id admin@example.com # Substitua pelo e-mail/ID do usuário
 ```
 O comando irá solicitar uma senha e gerar as informações necessárias.
+
+Importante:
+
+- isso é para login de **usuário nomeado na interface web**
+- o `krillc` continua usando o token de administrador para falar com a API local/remota
 
 ### 15.2 Configurar o Usuário em `/etc/krill.conf`
 
