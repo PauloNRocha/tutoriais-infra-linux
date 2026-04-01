@@ -1,13 +1,11 @@
-# Wazuh — Guia de Produção All-in-One para Provedores (Debian 13)
+# Guia de Produção: Wazuh AIO para provedores no Debian 13
 
-*Criado em 18 de dezembro de 2025*
-*Última atualização em 30 de janeiro de 2026*
+*Criado em: 18 de dezembro de 2025*  
+*Última atualização em: 01 de abril de 2026*
 
-**Cenário:** Provedor de internet de pequeno a médio porte com múltiplos servidores Linux e roteadores MikroTik.  
-**Arquitetura:** All-in-One (Manager + Indexer + Dashboard + Filebeat no mesmo host)  
-**Versão:** Wazuh 4.14.2 (estável)
+Wazuh em arquitetura All-in-One pode resolver bem quando a operação ainda está concentrada, mas ele precisa nascer com alguma folga e com o mínimo de organização para não virar dor de cabeça rápido. Este guia registra esse desenho no **Debian 13**, pensando em provedor pequeno ou médio, com múltiplos servidores Linux e integração com **MikroTik** via syslog.
 
-Este guia cobre o passo a passo de instalação e configuração do **Wazuh** em uma arquitetura All-in-One, voltado para um ambiente de provedor de internet. Inclui dimensionamento inicial, integração com agentes Linux e roteadores MikroTik, além de pós-instalação e segurança.
+O foco aqui é instalação, pós-instalação essencial, agentes, retenção, backup e um mínimo de endurecimento com `nftables`. Os exemplos abaixo seguem a linha do **Wazuh 4.14.4**.
 
 ---
 
@@ -15,18 +13,18 @@ Este guia cobre o passo a passo de instalação e configuração do **Wazuh** em
 1. [Dimensionamento rápido](#1)
 2. [Preparação do Debian 13 (Trixie) minimal](#2)
 3. [Decisões de Segurança Adotadas](#3)
-4. [Instalação Wazuh 4.14.2 (All-in-One)](#4)
+4. [Instalação Wazuh 4.14.4 (All-in-One)](#4)
 5. [Pós-instalação essencial](#5)
 6. [Configurando Agentes](#6)
-   - [Debian 12/13](#6.1)
-   - [AlmaLinux + cPanel (ignorar virtfs)](#6.2)
-7. [Integração MikroTik (Syslog)](#7)
-8. [Retenção de logs (90 dias – ISM/ILM)](#8)
-9. [Backup diário simples](#9)
-10. [Saúde e troubleshooting](#10)
-11. [Checklist final](#11)
-12. [Notas de produção](#12)
-13. [Referências](#13)
+7. [Agente Debian 12/13](#6.1)
+8. [Agente AlmaLinux + cPanel](#6.2)
+9. [Integração MikroTik (Syslog)](#7)
+10. [Retenção de logs (90 dias – ISM/ILM)](#8)
+11. [Backup diário simples](#9)
+12. [Saúde e troubleshooting](#10)
+13. [Checklist final](#11)
+14. [Notas de produção](#12)
+15. [Referências](#13)
 
 ---
 
@@ -59,7 +57,7 @@ Vamos preparar o sistema operacional para receber o Wazuh, garantindo estabilida
 2.  **Defina Hostname e edite hosts:**
     ```bash
     sudo hostnamectl set-hostname wazuh-isp
-    echo "127.0.0.1 wazuh-isp" | sudo tee -a /etc/hosts
+    echo "127.0.1.1 wazuh-isp" | sudo tee -a /etc/hosts
     ```
 3.  **Configure o firewall (nftables) — simples, stateful e “server-first”:**
 
@@ -230,20 +228,27 @@ Este guia não foca apenas na instalação, mas em uma implementação segura de
 ---
 
 <a id="4"></a>
-## 4. Instalação Wazuh 4.14.2 (All-in-One)
+## 4. Instalação Wazuh 4.14.4 (All-in-One)
 
-O instalador oficial pode não estar totalmente preparado para Debian 13 ainda, então faremos um pequeno ajuste.
+No Debian 13, o instalador oficial ainda pode mostrar aviso de que o sistema não está na lista de plataformas recomendadas. Mesmo assim, com os recursos mínimos atendidos, o fluxo AIO pode seguir normalmente.
 
 ```bash
 cd /root
 # Baixe o script de instalação oficial
 sudo curl -sO https://packages.wazuh.com/4.14/wazuh-install.sh
-# Ajuste para Debian 13: remova uma dependência que pode causar erro
 sudo sed -i 's/software-properties-common//g' wazuh-install.sh
 sudo chmod +x wazuh-install.sh
 # Inicie a instalação All-in-One (Manager + Indexer + Dashboard + Filebeat)
 sudo ./wazuh-install.sh -a
 ```
+
+Observações práticas sobre esse instalador no Debian 13:
+
+- ele atualmente baixa a série `4.14.4`
+- ainda mostra aviso de sistema não recomendado
+- exige pelo menos `4 GB RAM` e `2 vCPU`; abaixo disso ele aborta antes de instalar
+
+Se o host estiver abaixo disso e você quiser continuar mesmo assim, o próprio script sugere `-i`. Para produção, o melhor é respeitar os requisitos.
 Ao final, **salve as senhas!** Elas são cruciais.
 ```bash
 sudo tar -O -xf wazuh-install-files.tar wazuh-install-files/wazuh-passwords.txt
@@ -312,15 +317,15 @@ as variáveis no `postinst` e deixa o placeholder `MANAGER_IP` no `ossec.conf` (
 
 IMPORTANTE: ajuste a URL/arquivo conforme seu ambiente (versão e arquitetura).
 ```bash
-wget https://packages.wazuh.com/4.x/apt/pool/main/w/wazuh-agent/wazuh-agent_4.14.2-1_amd64.deb && \
+wget https://packages.wazuh.com/4.x/apt/pool/main/w/wazuh-agent/wazuh-agent_4.14.4-1_amd64.deb && \
 sudo env WAZUH_MANAGER="<IP_DO_MANAGER>" WAZUH_AGENT_GROUP="<NOME_DO_GRUPO>" WAZUH_AGENT_NAME="<NOME_DO_HOST>" \
-dpkg -i ./wazuh-agent_4.14.2-1_amd64.deb
+dpkg -i ./wazuh-agent_4.14.4-1_amd64.deb
 ```
 
 Se o `dpkg` reclamar de dependências, corrija e finalize:
 ```bash
 sudo apt -y -f install
-sudo dpkg -i ./wazuh-agent_4.14.2-1_amd64.deb
+sudo dpkg -i ./wazuh-agent_4.14.4-1_amd64.deb
 ```
 
 Atualizações futuras:
@@ -396,13 +401,15 @@ Reinicie o agente: `sudo systemctl restart wazuh-agent`.
 <a id="7.1"></a>
 ### 7.1 Configuração no MikroTik
 
-Os comandos abaixo são compatíveis com **RouterOS v7** (e tendem a ser equivalentes no v6).  
+Os comandos abaixo foram validados em **RouterOS v7.20.8**.  
 Se o seu MikroTik tiver mais de um IP/interface e você quer garantir que o syslog sempre “saia” por um IP fixo, use `src-address`.
 
 ```
-/system logging action add name=wazuh target=remote remote=<IP_WAZUH> remote-port=514 bsd-syslog=yes
+/system logging action add name=wazuh target=remote remote=<IP_WAZUH> remote-port=514 remote-protocol=udp syslog-time-format=bsd-syslog remote-log-format=syslog
 /system logging add topics=info,warning,error,critical,firewall,account action=wazuh
 ```
+
+Aqui, `syslog-time-format=bsd-syslog` só define o formato tradicional do timestamp enviado no syslog, o que costuma facilitar a leitura e o parser do lado do Wazuh. Já `remote-log-format=syslog` força o envio em syslog completo, o que simplifica a recepção no manager.
 
 Validação rápida no RouterOS (recomendado antes de ir para produção):
 ```
@@ -427,32 +434,39 @@ Edite `/var/ossec/etc/ossec.conf` no seu **servidor Wazuh**:
   <allowed-ips><IP_MIKROTIK>/32</allowed-ips>
 </remote>
 ```
-Crie o decoder em `/var/ossec/etc/decoders/mikrotik_decoder.xml`:
-```xml
-<decoder name="mikrotik">
-  <parent>syslog</parent>
-  <!-- Mais tolerante: alguns ambientes variam o prefixo/programa no syslog -->
-  <prematch>routeros|mikrotik</prematch>
-  <regex>routeros[^:]*: (\w+): (.*)</regex>
-  <order>program,log</order>
-</decoder>
-```
-Adicione regras em `/var/ossec/etc/rules/local_rules.xml`:
+Para esta integração, não é obrigatório criar decoder customizado. Com o MikroTik enviando syslog completo, o Wazuh já consegue pré-decodificar o cabeçalho e você pode ficar só com uma regra local simples.
+
+Adicione em `/var/ossec/etc/rules/local_rules.xml`:
 ```xml
 <group name="mikrotik,">
   <rule id="110100" level="5">
-    <decoded_as>mikrotik</decoded_as>
+    <hostname type="pcre2">^MikroTik$</hostname>
+    <match type="pcre2">^[A-Za-z0-9_.-]+,[A-Za-z0-9_.-]+ .+</match>
     <description>MikroTik evento geral</description>
-  </rule>
-  <rule id="110110" level="10">
-    <if_sid>110100</if_sid>
-    <!-- RouterOS v7 pode variar a mensagem -->
-    <regex>login failure|authentication failed</regex>
-    <description>MikroTik falha de login</description>
   </rule>
 </group>
 ```
 Reinicie o manager: `sudo systemctl restart wazuh-manager`.
+
+Valide se o manager ficou ouvindo em `514/udp`:
+```bash
+sudo ss -lunp | grep ':514 '
+```
+
+Se você quiser testar a regra antes de depender do roteador em produção, use o `wazuh-logtest` com um exemplo no formato que o RouterOS envia:
+```bash
+sudo /var/ossec/bin/wazuh-logtest
+```
+
+Cole uma linha como esta:
+```text
+Apr  1 17:55:29 MikroTik script,info teste de syslog
+```
+
+Para mensagens de autenticação, o próprio Wazuh já costuma reconhecer padrões como `login failure` e `authentication failed` pela regra `2501` (`syslog: User authentication failure`). Exemplo para teste:
+```text
+Apr  1 17:55:29 MikroTik account,error login failure for admin from 192.168.1.2 via ssh
+```
 
 ---
 
@@ -492,10 +506,52 @@ tar -czf "$DEST/wazuh_cfg_$DATE.tgz" /var/ossec/etc /etc/wazuh-indexer /etc/wazu
 find "$DEST" -name "wazuh_cfg_*.tgz" -mtime +30 -delete
 echo "Backup concluído em $DEST/wazuh_cfg_$DATE.tgz"
 ```
-Agende no cron:
+Deixe o script executável:
 ```bash
 sudo chmod +x /usr/local/bin/wazuh-backup.sh
-(sudo crontab -l 2>/dev/null; echo "0 2 * * * /usr/local/bin/wazuh-backup.sh") | sudo crontab -
+```
+
+Crie um service `oneshot`:
+```bash
+sudo nano /etc/systemd/system/wazuh-backup.service
+```
+
+Conteúdo:
+```ini
+[Unit]
+Description=Backup diário simples do Wazuh
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/wazuh-backup.sh
+```
+
+Crie o timer:
+```bash
+sudo nano /etc/systemd/system/wazuh-backup.timer
+```
+
+Conteúdo:
+```ini
+[Unit]
+Description=Timer diário do backup do Wazuh
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+RandomizedDelaySec=30m
+
+[Install]
+WantedBy=timers.target
+```
+
+Ative:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now wazuh-backup.timer
+systemctl list-timers | grep wazuh-backup
 ```
 
 ---
@@ -527,7 +583,7 @@ df -h /var/lib/wazuh-indexer
 ## 11. Checklist final
 
 -   [ ] Debian 13 minimal hardenizado
--   [ ] Wazuh 4.14.2 AIO instalado e serviços ativos
+-   [ ] Wazuh AIO instalado e serviços ativos
 -   [ ] Senhas do Indexer e Dashboard guardadas com segurança
 -   [ ] Heap do Indexer ajustado
 -   [ ] Agentes Debian e AlmaLinux registrados e reportando
@@ -563,6 +619,8 @@ df -h /var/lib/wazuh-indexer
 - `apt-transport-https` (quando é necessário): https://manpages.debian.org/apt-transport-https
 
 ---
+
+## Créditos
 
 Autor: Paulo Rocha  
 Repositório: https://github.com/PauloNRocha
