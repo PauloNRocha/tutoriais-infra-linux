@@ -369,7 +369,7 @@ EOF
 #
 # IMPORTANTE: ajuste versão e arquitetura conforme seu ambiente.
 sudo env WAZUH_MANAGER="<IP_DO_MANAGER>" WAZUH_AGENT_GROUP="<NOME_DO_GRUPO>" WAZUH_AGENT_NAME="<NOME_DO_HOST>" \
-dnf install -y https://packages.wazuh.com/4.x/yum/wazuh-agent-4.14.2-1.x86_64.rpm
+dnf install -y https://packages.wazuh.com/4.x/yum/wazuh-agent-4.14.4-1.x86_64.rpm
 
 # (Opcional) Se preferir instalar do repositório (sem URL do RPM), use este formato (evita perder variáveis):
 # sudo env WAZUH_MANAGER="<IP_DO_MANAGER>" WAZUH_AGENT_GROUP="<NOME_DO_GRUPO>" WAZUH_AGENT_NAME="<NOME_DO_HOST>" \
