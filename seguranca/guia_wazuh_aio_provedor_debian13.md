@@ -406,10 +406,15 @@ Se o seu MikroTik tiver mais de um IP/interface e você quer garantir que o sysl
 
 ```
 /system logging action add name=wazuh target=remote remote=<IP_WAZUH> remote-port=514 remote-protocol=udp syslog-time-format=bsd-syslog remote-log-format=syslog
-/system logging add topics=info,warning,error,critical,firewall,account action=wazuh
+/system logging add topics=error action=wazuh
+/system logging add topics=critical action=wazuh
+/system logging add topics=firewall action=wazuh
+/system logging add topics=account action=wazuh
 ```
 
 Aqui, `syslog-time-format=bsd-syslog` só define o formato tradicional do timestamp enviado no syslog, o que costuma facilitar a leitura e o parser do lado do Wazuh. Já `remote-log-format=syslog` força o envio em syslog completo, o que simplifica a recepção no manager.
+
+No RouterOS, vale evitar uma linha única com muitos tópicos misturados. Para este caso, separar por linhas deixa o filtro mais previsível.
 
 Validação rápida no RouterOS (recomendado antes de ir para produção):
 ```
@@ -434,18 +439,7 @@ Edite `/var/ossec/etc/ossec.conf` no seu **servidor Wazuh**:
   <allowed-ips><IP_MIKROTIK>/32</allowed-ips>
 </remote>
 ```
-Para esta integração, não é obrigatório criar decoder customizado. Com o MikroTik enviando syslog completo, o Wazuh já consegue pré-decodificar o cabeçalho e você pode ficar só com uma regra local simples.
-
-Adicione em `/var/ossec/etc/rules/local_rules.xml`:
-```xml
-<group name="mikrotik,">
-  <rule id="110100" level="5">
-    <hostname type="pcre2">^MikroTik$</hostname>
-    <match type="pcre2">^[A-Za-z0-9_.-]+,[A-Za-z0-9_.-]+ .+</match>
-    <description>MikroTik evento geral</description>
-  </rule>
-</group>
-```
+Para esta integração, não é obrigatório criar decoder customizado. Com o MikroTik enviando syslog completo, o Wazuh já consegue pré-decodificar o cabeçalho e você pode começar sem regra local adicional.
 Reinicie o manager: `sudo systemctl restart wazuh-manager`.
 
 Valide se o manager ficou ouvindo em `514/udp`:
@@ -463,10 +457,12 @@ Cole uma linha como esta:
 Apr  1 17:55:29 MikroTik script,info teste de syslog
 ```
 
-Para mensagens de autenticação, o próprio Wazuh já costuma reconhecer padrões como `login failure` e `authentication failed` pela regra `2501` (`syslog: User authentication failure`). Exemplo para teste:
+Para mensagens de autenticação, o próprio Wazuh já costuma reconhecer padrões como `login failure` e `authentication failed` pela regra `2501` (`syslog: User authentication failure`). Exemplo no formato que apareceu no RouterOS durante o teste:
 ```text
-Apr  1 17:55:29 MikroTik account,error login failure for admin from 192.168.1.2 via ssh
+Apr  2 15:52:00 MikroTik login failure for user codex from 192.168.1.12 via ssh
 ```
+
+Se você quiser criar regras locais específicas para `firewall`, `account` ou outros eventos do MikroTik, primeiro capture exemplos reais do seu ambiente. No RouterOS, a mesma categoria pode aparecer com formatos diferentes dependendo do tipo de evento.
 
 ---
 
