@@ -1,9 +1,9 @@
 # Guia de Produção: Unbound no Debian 13 (Trixie) como DNS recursivo para ISP com DNSSEC e RPZ de segurança
 
 *Criado em: 23 de janeiro de 2026*  
-*Última atualização em: 23 de março de 2026*  
+*Última atualização em: 15 de maio de 2026*
 
-No cenário de ISP, resolvedor recursivo precisa ser previsível, aguentar carga e não virar problema de segurança. Este guia registra a configuração que usei com **Unbound** no **Debian 13 (Trixie)**, cobrindo **DNSSEC**, **QNAME Minimization**, **RPZ** para feeds de ameaça e a automação que mantém tudo rodando sem intervenção manual o tempo inteiro.
+Em ISP, resolvedor recursivo é serviço de sustentação: se fica aberto, vira risco de abuso; se fica lento, parece que a internet inteira está ruim. Este guia mostra a configuração que uso como base para **Unbound** no **Debian 13 (Trixie)**, com **DNSSEC**, **QNAME Minimization**, **RPZ** para feeds de ameaça e automação para manter a operação previsível.
 
 Ele combina as seguintes características e boas práticas:
 
@@ -13,7 +13,7 @@ Ele combina as seguintes características e boas práticas:
 -   **Alta Performance para ISP**: Otimização de cache, threads e buffers de rede para alto volume de tráfego.
 -   **Automação e Operação**: Scripts e `systemd timers` para manter as listas de bloqueio atualizadas e comandos de gestão para o dia a dia.
 
-> **Objetivo:** ao final deste guia, a ideia é ter um resolver recursivo fechado, validando DNSSEC, consultando a raiz diretamente, aplicando RPZ de segurança com governança mínima e pronto para operar em produção sem virar DNS público por descuido.
+> **Objetivo:** deixar um resolver recursivo fechado, validando DNSSEC, consultando a raiz diretamente, aplicando RPZ de segurança com governança mínima e pronto para produção sem virar DNS público por descuido.
 
 > **Nota:** este documento é independente, sem afiliação com NIC.br/CERT.br/CGI.br; links citados são apenas referências públicas.  
 > **Nota (jurídico/regulatório):** este material não é aconselhamento jurídico; valide políticas e comunicações com jurídico/regulatório do seu contexto.
@@ -214,17 +214,17 @@ Para um passo a passo completo e pronto para produção, veja: **[Guia de Produ�
 
 ```bash
 sudo apt update
-sudo apt -y full-upgrade
+sudo apt full-upgrade
 ```
 
-Instale os Pacotes principais
+Instale os pacotes principais:
 ```bash
-sudo apt -y install unbound unbound-anchor dnsutils nftables fail2ban curl ca-certificates
+sudo apt install unbound unbound-anchor dnsutils nftables fail2ban curl ca-certificates
 ```
 
-Ferramentas úteis em operação/testes
+Ferramentas úteis em operação/testes:
 ```bash
-sudo apt -y install dnsperf jq
+sudo apt install dnsperf jq
 ```
 
 Valide a versão e recursos:
@@ -263,7 +263,7 @@ Procure por:
 Opção B (mais comum em ISP, via Chrony):
 
 ```bash
-sudo apt -y install chrony
+sudo apt install chrony
 sudo systemctl enable --now chrony
 chronyc tracking
 ```
@@ -410,7 +410,7 @@ sudo cp -av /etc/unbound/unbound.conf "/etc/unbound/unbound.conf.bak.${TS}"
 Depois reinstale o pacote para restaurar o padrão do Debian:
 
 ```bash
-sudo apt -y install --reinstall unbound
+sudo apt install --reinstall unbound
 ```
 
 > Se o `dpkg` perguntar sobre “arquivo de configuração foi modificado”, escolha a versão do **mantenedor** para voltar ao padrão do Debian.
@@ -782,7 +782,7 @@ EOF
 
 ### 5.3 Tuning “pé no chão” (cache, threads e slabs)
 
-> Não existe “valor mágico”. O objetivo aqui é dar **pontos de partida** e um método de ajuste.
+> Não existe valor universal. O objetivo aqui é dar **pontos de partida** e um método de ajuste.
 
 Regras práticas:
 - cache grande melhora latência e reduz tráfego externo, mas **consome RAM**;
@@ -1887,7 +1887,7 @@ Valide por métricas (antes/depois):
 
 - **Erros/drops UDP (buffer):**  
   ```bash
-  nstat -az | egrep 'Udp(InErrors|RcvbufErrors|SndbufErrors)'
+  nstat -az | grep -E 'Udp(InErrors|RcvbufErrors|SndbufErrors)'
   ```
 
 - **Backlog/atraso de processamento (softnet):**  
@@ -2604,13 +2604,13 @@ Ver contadores principais (cache e volume):
 
 ```bash
 sudo unbound-control stats_noreset \
-  | egrep '^(total\.num\.queries|total\.num\.cachehits|total\.num\.cachemiss|total\.num\.prefetch|total\.num\.recursivereplies|total\.num\.queries_ip_ratelimited|total\.recursion\.time\.avg)='
+  | grep -E '^(total\.num\.queries|total\.num\.cachehits|total\.num\.cachemiss|total\.num\.prefetch|total\.num\.recursivereplies|total\.num\.queries_ip_ratelimited|total\.recursion\.time\.avg)='
 ```
 
 Monitorar ao vivo (acumulado):
 
 ```bash
-watch -n 2 -- 'sudo unbound-control stats_noreset | egrep "^(total\\.num\\.(queries|cachehits|cachemiss|prefetch|recursivereplies|queries_ip_ratelimited)|total\\.recursion\\.time\\.avg)="'
+watch -n 2 -- 'sudo unbound-control stats_noreset | grep -E "^(total\\.num\\.(queries|cachehits|cachemiss|prefetch|recursivereplies|queries_ip_ratelimited)|total\\.recursion\\.time\\.avg)="'
 ```
 
 QPS aproximado (amostragem a cada 1s, usando `stats_noreset`):
@@ -2626,7 +2626,7 @@ done
 '
 ```
 
-> Se algum contador não existir na sua versão, rode `unbound-control stats_noreset | head -n 80` e ajuste os nomes do `awk/egrep`.
+> Se algum contador não existir na sua versão, rode `unbound-control stats_noreset | head -n 80` e ajuste os nomes no comando de filtro.
 
 ##### Interpretação prática (campos principais)
 
@@ -2745,7 +2745,7 @@ sudo journalctl -u unbound -n 200 --no-pager
 1) Se você pulou a instalação da seção 2, instale a ferramenta agora:
 
 ```bash
-sudo apt -y install dnsperf
+sudo apt install dnsperf
 ```
 
 2) Crie um arquivo de consultas (exemplo pequeno):
@@ -2773,7 +2773,7 @@ dnsperf -s 127.0.0.1 -d /tmp/dnsperf-queries.txt -l 20 -Q 2000
 5) Correlacione com stats do Unbound:
 
 ```bash
-sudo unbound-control stats_noreset | egrep 'total\.num\.queries|total\.num\.cachehits|total\.num\.cachemiss'
+sudo unbound-control stats_noreset | grep -E 'total\.num\.queries|total\.num\.cachehits|total\.num\.cachemiss'
 ```
 
 ### 12.6 Fazer o próprio servidor usar o Unbound local sem “quebrar” o `resolv.conf`
@@ -2922,6 +2922,8 @@ dig @127.0.0.1 teste-malware.exemplo.invalid A +noall +answer +comments
 ### Unbound (documentação oficial / manpages)
 - NLnet Labs, Documentação do Unbound: https://nlnetlabs.nl/documentation/unbound/
 - Unbound Docs, RPZ (conceitos, triggers, ações, ordem, DISABLED/PASSTHRU): https://unbound.docs.nlnetlabs.nl/en/latest/topics/filtering/rpz.html
+- Unbound Docs, `unbound-control(8)` (reload, reload_keep_cache, stats, stats_noreset): https://unbound.docs.nlnetlabs.nl/en/latest/manpages/unbound-control.html
+- NLnet Labs, Howto Statistics (uso de métricas e `unbound-control`): https://www.nlnetlabs.nl/documentation/unbound/howto-statistics/
 - Debian Manpages (testing/trixie), `unbound.conf(5)` (opções de cache, DNSSEC, RPZ, logging, ip-ratelimit): https://manpages.debian.org/testing/unbound/unbound.conf.5.en.html
 - Debian (pacote `unbound`): https://packages.debian.org/trixie/unbound
 
@@ -2968,4 +2970,4 @@ dig @127.0.0.1 teste-malware.exemplo.invalid A +noall +answer +comments
 ## Créditos
 
 Autor: Paulo Rocha  
-Repositório: https://github.com/PauloNRocha
+Repositório: https://github.com/PauloNRocha/tutoriais-infra-linux
