@@ -1,9 +1,9 @@
 # Guia de Produção: BIND9 no Debian 13 com Primary/Secondary, TSIG, DNSSEC e Fail2Ban
 
 *Criado em: 08 de janeiro de 2026*  
-*Última atualização em: 23 de março de 2026*
+*Última atualização em: 15 de maio de 2026*
 
-Servidor DNS autoritativo é um daqueles serviços em que detalhe pequeno vira problema grande muito rápido. Este guia registra o caminho que adotei no **Debian 13 (Trixie)** para subir **BIND9** com dois servidores, transferência autenticada por **TSIG**, assinatura automática com **DNSSEC** e proteção básica com **nftables** e **Fail2Ban**.
+Servidor DNS autoritativo é um daqueles serviços em que detalhe pequeno vira problema grande muito rápido. Aqui deixo o caminho que adotei no **Debian 13 (Trixie)** para subir **BIND9** com dois servidores, transferência autenticada por **TSIG**, assinatura automática com **DNSSEC** e proteção básica com **nftables** e **Fail2Ban**.
 
 Veja também: [guia de recuperação de zona BIND9 com DNSSEC após erro de sintaxe](./guia_producao_bind9_recuperacao_zona_dnssec.md)
 
@@ -14,10 +14,9 @@ Ele combina as seguintes características e boas práticas:
 -   **DNSSEC moderno**: Configuração de `dnssec-policy` (KASP) com rotação automática de chaves.
 -   **Boas práticas Debian**: Organização de arquivos, validação e técnicas avançadas de troubleshooting.
 
-> **Convenção de nomes:** a documentação atual do BIND usa `Primary` e `Secondary`. Se você está acostumado com `Master` e `Slave`, a equivalência aqui é direta.
+> **Convenção de nomes:** a documentação atual do BIND usa `Primary` e `Secondary`. Nos exemplos de configuração, uso `type primary;`, `type secondary;` e `primaries { ... };`. Se você encontrar material antigo com `master`, `slave` ou `masters`, a equivalência é direta, mas a nomenclatura nova fica mais alinhada com a documentação atual.
 
-> **Objetivo:** ao final deste guia, a ideia é ter dois servidores autoritativos funcionando de forma previsível, com zonas forward e reversa, transferência Primary/Secondary autenticada por TSIG, DNSSEC com KASP e um mínimo de proteção para exposição pública em produção.
-
+> **Objetivo:** deixar dois servidores autoritativos funcionando de forma previsível, com zonas forward e reversa, transferência Primary/Secondary autenticada por TSIG, DNSSEC com KASP e um mínimo de proteção para exposição pública em produção.
 
 ---
 
@@ -139,7 +138,7 @@ Em **ambos**:
 
 ```bash
 sudo apt update
-sudo apt install -y bind9 bind9-utils dnsutils nftables fail2ban
+sudo apt install bind9 bind9-utils dnsutils nftables fail2ban
 ```
 
 Se a máquina estiver muito enxuta e você estiver usando um usuário comum, pode ser necessário instalar `sudo` antes.  
@@ -178,7 +177,7 @@ sudo timedatectl set-ntp true
 Se isso retornar algo como `Failed to set ntp: NTP not supported`, instale e habilite `chrony`:
 
 ```bash
-sudo apt install -y chrony
+sudo apt install chrony
 sudo systemctl enable --now chrony
 chronyc tracking
 ```
@@ -255,26 +254,30 @@ sudo systemctl enable --now nftables
 <a id="5"></a>
 ## 5) Organização de diretórios
 
+Os nomes abaixo seguem a nomenclatura `primary`/`secondary`.
+
+Se você já tem um BIND em produção usando nomes antigos como `master-aut`, `master-rev`, `slave-aut` ou `slave-rev`, não renomeie diretórios no susto. O importante é manter consistência entre o caminho declarado no `named.conf.local` e o caminho real no sistema de arquivos.
+
 ### 5.1) Primary (ns1)
 
 ```bash
-sudo mkdir -p /var/lib/bind/master-aut/exemplo.com.br/keys
-sudo mkdir -p /var/lib/bind/master-rev/IPv4/203.0.113.x/keys
-sudo mkdir -p /var/lib/bind/master-rev/IPv6/2001.db8.abcd.x/keys
-sudo chown -R bind:bind /var/lib/bind/master-aut /var/lib/bind/master-rev
-sudo chmod -R 750 /var/lib/bind/master-aut /var/lib/bind/master-rev
+sudo mkdir -p /var/lib/bind/primary-aut/exemplo.com.br/keys
+sudo mkdir -p /var/lib/bind/primary-rev/IPv4/203.0.113.x/keys
+sudo mkdir -p /var/lib/bind/primary-rev/IPv6/2001.db8.abcd.x/keys
+sudo chown -R bind:bind /var/lib/bind/primary-aut /var/lib/bind/primary-rev
+sudo chmod -R 750 /var/lib/bind/primary-aut /var/lib/bind/primary-rev
 ```
 
 ### 5.2) Secondary (ns2)
 
 ```bash
-sudo mkdir -p /var/cache/bind/slave-aut/exemplo.com.br
-sudo mkdir -p /var/cache/bind/slave-rev/IPv4/203.0.113.x
-sudo mkdir -p /var/cache/bind/slave-rev/IPv6/2001.db8.abcd.x
-sudo chown -R bind:bind /var/cache/bind/slave-aut /var/cache/bind/slave-rev
+sudo mkdir -p /var/cache/bind/secondary-aut/exemplo.com.br
+sudo mkdir -p /var/cache/bind/secondary-rev/IPv4/203.0.113.x
+sudo mkdir -p /var/cache/bind/secondary-rev/IPv6/2001.db8.abcd.x
+sudo chown -R bind:bind /var/cache/bind/secondary-aut /var/cache/bind/secondary-rev
 ```
 
-> Observação: no Secondary, esse layout é só uma forma organizada de separar forward e reverso. Em produção, você pode usar um cache mais “flat”, como `/var/cache/bind/slaves/`, desde que os caminhos declarados nas zonas batam com o que o BIND consegue gravar.
+> Observação: no Secondary, esse layout é só uma forma organizada de separar forward e reverso. Em produção, você pode usar um cache mais “flat”, como `/var/cache/bind/secondaries/`, desde que os caminhos declarados nas zonas batam com o que o BIND consegue gravar.
 
 > Por que assim?
 > - Config fica em `/etc/bind/`
@@ -639,7 +642,7 @@ sudo named-checkconf
 
 ### 8.6) (Recomendado) “Amarrar” TSIG para o outro servidor com `server { keys { ... } }`
 
-Além de usar TSIG em `allow-transfer`/`masters`, vale a pena declarar a chave no bloco `server {}`. Isso deixa o NOTIFY/transferência mais consistente e facilita troubleshooting de “bad key” / “notify refused”.
+Além de usar TSIG em `allow-transfer`/`primaries`, vale a pena declarar a chave no bloco `server {}`. Isso deixa o NOTIFY/transferência mais consistente e facilita troubleshooting de “bad key” / “notify refused”.
 
 Nós vamos usar isso nos exemplos do `named.conf.local` do ns1 e do ns2.
 
@@ -667,8 +670,8 @@ server 203.0.113.20 { keys { "xfr-exemplo"; }; };
 server 2001:db8:abcd::20 { keys { "xfr-exemplo"; }; };
 
 zone "exemplo.com.br" {
-  type master;
-  file "/var/lib/bind/master-aut/exemplo.com.br/exemplo.com.br.hosts";
+  type primary;
+  file "/var/lib/bind/primary-aut/exemplo.com.br/exemplo.com.br.hosts";
 
   # Transferência/NOTIFY com TSIG
   allow-transfer { key "xfr-exemplo"; };
@@ -676,7 +679,7 @@ zone "exemplo.com.br" {
   notify yes;
 
   # DNSSEC (KASP): recomendado começar com o default
-  key-directory "/var/lib/bind/master-aut/exemplo.com.br/keys";
+  key-directory "/var/lib/bind/primary-aut/exemplo.com.br/keys";
   dnssec-policy default;
 
   # Em versões atuais do BIND, `dnssec-policy` em zona estática depende de inline-signing.
@@ -685,8 +688,8 @@ zone "exemplo.com.br" {
 };
 
 zone "113.0.203.in-addr.arpa" {
-  type master;
-  file "/var/lib/bind/master-rev/IPv4/203.0.113.x/203.0.113.rev";
+  type primary;
+  file "/var/lib/bind/primary-rev/IPv4/203.0.113.x/203.0.113.rev";
 
   allow-transfer { key "xfr-exemplo"; };
   also-notify { 203.0.113.20; 2001:db8:abcd::20; };
@@ -695,14 +698,14 @@ zone "113.0.203.in-addr.arpa" {
   # DNSSEC (KASP): se você também assina este reverso
   # Observação: para ter cadeia de confiança, o DS precisa existir no pai (painel de quem delega o reverso —
   # por exemplo: Registro.br → Numeração, ou seu provedor/ISP/RIR).
-  key-directory "/var/lib/bind/master-rev/IPv4/203.0.113.x/keys";
+  key-directory "/var/lib/bind/primary-rev/IPv4/203.0.113.x/keys";
   dnssec-policy default;
   inline-signing yes;
 };
 
 zone "d.c.b.a.8.b.d.0.1.0.0.2.ip6.arpa" {
-  type master;
-  file "/var/lib/bind/master-rev/IPv6/2001.db8.abcd.x/2001.db8.abcd.rev";
+  type primary;
+  file "/var/lib/bind/primary-rev/IPv6/2001.db8.abcd.x/2001.db8.abcd.rev";
 
   allow-transfer { key "xfr-exemplo"; };
   also-notify { 203.0.113.20; 2001:db8:abcd::20; };
@@ -711,7 +714,7 @@ zone "d.c.b.a.8.b.d.0.1.0.0.2.ip6.arpa" {
   # DNSSEC (KASP): se você também assina este reverso
   # Observação: para ter cadeia de confiança, o DS precisa existir no pai (painel de quem delega o reverso —
   # por exemplo: Registro.br → Numeração, ou seu provedor/ISP/RIR).
-  key-directory "/var/lib/bind/master-rev/IPv6/2001.db8.abcd.x/keys";
+  key-directory "/var/lib/bind/primary-rev/IPv6/2001.db8.abcd.x/keys";
   dnssec-policy default;
   inline-signing yes;
 };
@@ -723,7 +726,7 @@ zone "d.c.b.a.8.b.d.0.1.0.0.2.ip6.arpa" {
 > O BIND vai gerar automaticamente arquivos como `*.signed` e `*.signed.jnl` no mesmo diretório — **não edite esses**.
 
 ```bash
-sudo -u bind nano /var/lib/bind/master-aut/exemplo.com.br/exemplo.com.br.hosts
+sudo -u bind nano /var/lib/bind/primary-aut/exemplo.com.br/exemplo.com.br.hosts
 ```
 
 Conteúdo (exemplo):
@@ -763,7 +766,7 @@ mail IN AAAA  2001:db8:abcd::60
 ### 9.3) Reverso IPv4 (/24) (ns1)
 
 ```bash
-sudo -u bind nano /var/lib/bind/master-rev/IPv4/203.0.113.x/203.0.113.rev
+sudo -u bind nano /var/lib/bind/primary-rev/IPv4/203.0.113.x/203.0.113.rev
 ```
 
 ```zone
@@ -891,7 +894,7 @@ Em IPv6, a prática mais segura e comum é:
 ### 9.4) Reverso IPv6 (/48) (ns1)
 
 ```bash
-sudo -u bind nano /var/lib/bind/master-rev/IPv6/2001.db8.abcd.x/2001.db8.abcd.rev
+sudo -u bind nano /var/lib/bind/primary-rev/IPv6/2001.db8.abcd.x/2001.db8.abcd.rev
 ```
 
 > Regras rápidas (IPv6 reverse):
@@ -926,18 +929,18 @@ $TTL 86400
 
 ```bash
 sudo named-checkconf
-sudo named-checkzone exemplo.com.br /var/lib/bind/master-aut/exemplo.com.br/exemplo.com.br.hosts
-sudo named-checkzone 113.0.203.in-addr.arpa /var/lib/bind/master-rev/IPv4/203.0.113.x/203.0.113.rev
-sudo named-checkzone d.c.b.a.8.b.d.0.1.0.0.2.ip6.arpa /var/lib/bind/master-rev/IPv6/2001.db8.abcd.x/2001.db8.abcd.rev
+sudo named-checkzone exemplo.com.br /var/lib/bind/primary-aut/exemplo.com.br/exemplo.com.br.hosts
+sudo named-checkzone 113.0.203.in-addr.arpa /var/lib/bind/primary-rev/IPv4/203.0.113.x/203.0.113.rev
+sudo named-checkzone d.c.b.a.8.b.d.0.1.0.0.2.ip6.arpa /var/lib/bind/primary-rev/IPv6/2001.db8.abcd.x/2001.db8.abcd.rev
 sudo systemctl restart named
 ```
 
 Opcional: confira os arquivos gerados (inclui `*.signed` e `*.jnl`):
 
 ```bash
-sudo -u bind ls -la /var/lib/bind/master-aut/exemplo.com.br/
-sudo -u bind ls -la /var/lib/bind/master-rev/IPv4/203.0.113.x/
-sudo -u bind ls -la /var/lib/bind/master-rev/IPv6/2001.db8.abcd.x/
+sudo -u bind ls -la /var/lib/bind/primary-aut/exemplo.com.br/
+sudo -u bind ls -la /var/lib/bind/primary-rev/IPv4/203.0.113.x/
+sudo -u bind ls -la /var/lib/bind/primary-rev/IPv6/2001.db8.abcd.x/
 ```
 
 ---
@@ -964,23 +967,23 @@ server 203.0.113.10 { keys { "xfr-exemplo"; }; };
 server 2001:db8:abcd::10 { keys { "xfr-exemplo"; }; };
 
 zone "exemplo.com.br" {
-  type slave;
-  file "/var/cache/bind/slave-aut/exemplo.com.br/exemplo.com.br.hosts.signed";
-  masters { 203.0.113.10 key "xfr-exemplo"; 2001:db8:abcd::10 key "xfr-exemplo"; };
+  type secondary;
+  file "/var/cache/bind/secondary-aut/exemplo.com.br/exemplo.com.br.hosts.signed";
+  primaries { 203.0.113.10 key "xfr-exemplo"; 2001:db8:abcd::10 key "xfr-exemplo"; };
   allow-notify { 203.0.113.10; 2001:db8:abcd::10; };
 };
 
 zone "113.0.203.in-addr.arpa" {
-  type slave;
-  file "/var/cache/bind/slave-rev/IPv4/203.0.113.x/203.0.113.rev.signed";
-  masters { 203.0.113.10 key "xfr-exemplo"; 2001:db8:abcd::10 key "xfr-exemplo"; };
+  type secondary;
+  file "/var/cache/bind/secondary-rev/IPv4/203.0.113.x/203.0.113.rev.signed";
+  primaries { 203.0.113.10 key "xfr-exemplo"; 2001:db8:abcd::10 key "xfr-exemplo"; };
   allow-notify { 203.0.113.10; 2001:db8:abcd::10; };
 };
 
 zone "d.c.b.a.8.b.d.0.1.0.0.2.ip6.arpa" {
-  type slave;
-  file "/var/cache/bind/slave-rev/IPv6/2001.db8.abcd.x/2001.db8.abcd.rev.signed";
-  masters { 203.0.113.10 key "xfr-exemplo"; 2001:db8:abcd::10 key "xfr-exemplo"; };
+  type secondary;
+  file "/var/cache/bind/secondary-rev/IPv6/2001.db8.abcd.x/2001.db8.abcd.rev.signed";
+  primaries { 203.0.113.10 key "xfr-exemplo"; 2001:db8:abcd::10 key "xfr-exemplo"; };
   allow-notify { 203.0.113.10; 2001:db8:abcd::10; };
 };
 ```
@@ -997,9 +1000,9 @@ sudo systemctl restart named
 No ns2:
 
 ```bash
-sudo -u bind ls -la /var/cache/bind/slave-aut/exemplo.com.br/
-sudo -u bind ls -la /var/cache/bind/slave-rev/IPv4/203.0.113.x/
-sudo -u bind ls -la /var/cache/bind/slave-rev/IPv6/2001.db8.abcd.x/
+sudo -u bind ls -la /var/cache/bind/secondary-aut/exemplo.com.br/
+sudo -u bind ls -la /var/cache/bind/secondary-rev/IPv4/203.0.113.x/
+sudo -u bind ls -la /var/cache/bind/secondary-rev/IPv6/2001.db8.abcd.x/
 ```
 
 > É normal ver arquivos `*.jnl` (journal) e, em zonas com DNSSEC/inline-signing, arquivos `*.signed` e `*.signed.jnl`.
@@ -1007,7 +1010,7 @@ sudo -u bind ls -la /var/cache/bind/slave-rev/IPv6/2001.db8.abcd.x/
 Se quiser ver a estrutura de diretórios de forma mais visual:
 
 ```bash
-sudo apt install -y tree
+sudo apt install tree
 sudo tree /var/cache/bind -L 4
 ```
 
@@ -1115,13 +1118,13 @@ dig -x 2001:db8:abcd::10 @1.1.1.1 +noall +answer
 Após reiniciar, aguarde 1–3 minutos e liste:
 
 ```bash
-sudo -u bind sh -c 'cd / && ls -1 /var/lib/bind/master-aut/exemplo.com.br/keys/'
+sudo -u bind sh -c 'cd / && ls -1 /var/lib/bind/primary-aut/exemplo.com.br/keys/'
 ```
 
 Identifique qual delas é **KSK** (a própria `.key` costuma ter comentário indicando):
 
 ```bash
-sudo -u bind sh -c 'cd / && find /var/lib/bind/master-aut/exemplo.com.br/keys -name "*.key" -exec grep -Hi "key-signing key" {} +'
+sudo -u bind sh -c 'cd / && find /var/lib/bind/primary-aut/exemplo.com.br/keys -name "*.key" -exec grep -Hi "key-signing key" {} +'
 ```
 
 > Dica: o `cd /` evita erro quando você roda o comando a partir de um diretório que o usuário `bind` não consegue acessar, como `/root` ou `/home/seu_usuario`.
@@ -1133,7 +1136,7 @@ Use o arquivo KSK encontrado e gere DS com SHA-256:
 ```bash
 # Use o nome real da KSK encontrada no passo anterior, sem a extensão ".key"
 # Exemplo de formato:
-sudo -u bind dnssec-dsfromkey -2 /var/lib/bind/master-aut/exemplo.com.br/keys/Kexemplo.com.br.+013+KEYID_REAL
+sudo -u bind dnssec-dsfromkey -2 /var/lib/bind/primary-aut/exemplo.com.br/keys/Kexemplo.com.br.+013+KEYID_REAL
 ```
 
 > Se aparecer erro procurando `...key.key`, passe o caminho **sem** `.key` (como no exemplo acima).
@@ -1144,7 +1147,7 @@ Opcional (mais seguro, sem “adivinhar” o ID da KSK):
 sudo -u bind bash -c '
 cd /
 set -e
-KSK_KEY=$(grep -l "key-signing key" /var/lib/bind/master-aut/exemplo.com.br/keys/*.key | head -n 1)
+KSK_KEY=$(grep -l "key-signing key" /var/lib/bind/primary-aut/exemplo.com.br/keys/*.key | head -n 1)
 echo "KSK encontrada: $KSK_KEY"
 '
 ```
@@ -1152,7 +1155,7 @@ echo "KSK encontrada: $KSK_KEY"
 Depois, use o caminho retornado acima no `dnssec-dsfromkey`:
 
 ```bash
-sudo -u bind sh -c 'cd / && dnssec-dsfromkey -2 /var/lib/bind/master-aut/exemplo.com.br/keys/Kexemplo.com.br.+013+KEYID_REAL'
+sudo -u bind sh -c 'cd / && dnssec-dsfromkey -2 /var/lib/bind/primary-aut/exemplo.com.br/keys/Kexemplo.com.br.+013+KEYID_REAL'
 ```
 
 Se você também assina **reverso** com DNSSEC, gere o DS do reverso do mesmo jeito (um DS por zona):
@@ -1162,7 +1165,7 @@ Se você também assina **reverso** com DNSSEC, gere o DS do reverso do mesmo je
 sudo -u bind bash -c '
 cd /
 set -e
-KSK_KEY=$(grep -l "key-signing key" /var/lib/bind/master-rev/IPv4/203.0.113.x/keys/*.key | head -n 1)
+KSK_KEY=$(grep -l "key-signing key" /var/lib/bind/primary-rev/IPv4/203.0.113.x/keys/*.key | head -n 1)
 echo "KSK reverso IPv4: $KSK_KEY"
 '
 
@@ -1170,7 +1173,7 @@ echo "KSK reverso IPv4: $KSK_KEY"
 sudo -u bind bash -c '
 cd /
 set -e
-KSK_KEY=$(grep -l "key-signing key" /var/lib/bind/master-rev/IPv6/2001.db8.abcd.x/keys/*.key | head -n 1)
+KSK_KEY=$(grep -l "key-signing key" /var/lib/bind/primary-rev/IPv6/2001.db8.abcd.x/keys/*.key | head -n 1)
 echo "KSK reverso IPv6: $KSK_KEY"
 '
 ```
@@ -1489,7 +1492,7 @@ dig +https @192.168.1.10 exemplo.com.br A
 Alternativa robusta: `kdig` (Knot DNS utils):
 
 ```bash
-sudo apt install -y knot-dnsutils
+sudo apt install knot-dnsutils
 kdig +https @192.168.1.10 exemplo.com.br A
 ```
 
@@ -1635,7 +1638,7 @@ Sintoma típico: o `named` não sobe (ou sobe sem log) e o journal mostra algo c
    ```
    Se `aa-status` não existir:
    ```bash
-   sudo apt install -y apparmor-utils
+   sudo apt install apparmor-utils
    ```
 
 2. Veja as negações:
@@ -1675,7 +1678,7 @@ Checklist rápido:
 
 - confirme que o nome da chave é exatamente o mesmo nos dois servidores
 - confirme que o `secret` em `/etc/bind/keys.conf` é idêntico nos dois lados
-- confirme que o `server { keys { ... } }` e o `masters/primaries { ... key ...; }` estão apontando para a mesma chave
+- confirme que o `server { keys { ... } }` e o `primaries { ... key ...; }` estão apontando para a mesma chave
 - veja os logs do `named` procurando por `TSIG`, `NOTAUTH` ou `bad key`
 
 Comandos úteis:
@@ -1700,9 +1703,9 @@ Se você perder o **ns1 (Primary)** mas o **ns2 (Secondary)** ainda estiver resp
 
 Antes de mexer em qualquer coisa, responda:
 
-- Você tem backup dos **arquivos de zona “fonte”** (sem DNSSEC), ex.: `/var/lib/bind/master-aut/*/*.hosts` e `/var/lib/bind/master-rev/**`?
+- Você tem backup dos **arquivos de zona “fonte”** (sem DNSSEC), ex.: `/var/lib/bind/primary-aut/*/*.hosts` e `/var/lib/bind/primary-rev/**`?
 - Você tem backup da chave **TSIG** (`/etc/bind/keys.conf`)?
-- Você tem backup das chaves DNSSEC (**KASP**) por zona, ex.: `/var/lib/bind/master-aut/*/keys` e `/var/lib/bind/master-rev/**/keys`?
+- Você tem backup das chaves DNSSEC (**KASP**) por zona, ex.: `/var/lib/bind/primary-aut/*/keys` e `/var/lib/bind/primary-rev/**/keys`?
 - Existe **DS publicado** no Registro.br para o domínio? (use a ferramenta de Verificação de DS)
 
 ### 16.2) Caso A — você tem backup das chaves DNSSEC (melhor cenário)
@@ -1713,25 +1716,25 @@ Aqui a regra é simples: **restaure as chaves e mantenha o DS** (não precisa tr
 2. Restaure os `key-directory` no ns1 (exemplo; adapte ao seu backup). Aqui nós guardamos chaves **dentro de cada zona**, então você restaura “por pasta”:
    ```bash
    # Forward
-   sudo install -d -o bind -g bind -m 0750 /var/lib/bind/master-aut/exemplo.com.br/keys
-   sudo cp -a /CAMINHO_DO_BACKUP/master-aut/exemplo.com.br/keys/. /var/lib/bind/master-aut/exemplo.com.br/keys/
+   sudo install -d -o bind -g bind -m 0750 /var/lib/bind/primary-aut/exemplo.com.br/keys
+   sudo cp -a /CAMINHO_DO_BACKUP/primary-aut/exemplo.com.br/keys/. /var/lib/bind/primary-aut/exemplo.com.br/keys/
 
    # Reverse IPv4
-   sudo install -d -o bind -g bind -m 0750 /var/lib/bind/master-rev/IPv4/203.0.113.x/keys
-   sudo cp -a /CAMINHO_DO_BACKUP/master-rev/IPv4/203.0.113.x/keys/. /var/lib/bind/master-rev/IPv4/203.0.113.x/keys/
+   sudo install -d -o bind -g bind -m 0750 /var/lib/bind/primary-rev/IPv4/203.0.113.x/keys
+   sudo cp -a /CAMINHO_DO_BACKUP/primary-rev/IPv4/203.0.113.x/keys/. /var/lib/bind/primary-rev/IPv4/203.0.113.x/keys/
 
    # Reverse IPv6
-   sudo install -d -o bind -g bind -m 0750 /var/lib/bind/master-rev/IPv6/2001.db8.abcd.x/keys
-   sudo cp -a /CAMINHO_DO_BACKUP/master-rev/IPv6/2001.db8.abcd.x/keys/. /var/lib/bind/master-rev/IPv6/2001.db8.abcd.x/keys/
+   sudo install -d -o bind -g bind -m 0750 /var/lib/bind/primary-rev/IPv6/2001.db8.abcd.x/keys
+   sudo cp -a /CAMINHO_DO_BACKUP/primary-rev/IPv6/2001.db8.abcd.x/keys/. /var/lib/bind/primary-rev/IPv6/2001.db8.abcd.x/keys/
 
-   sudo chown -R bind:bind /var/lib/bind/master-aut /var/lib/bind/master-rev
-   sudo chmod -R 750 /var/lib/bind/master-aut /var/lib/bind/master-rev
+   sudo chown -R bind:bind /var/lib/bind/primary-aut /var/lib/bind/primary-rev
+   sudo chmod -R 750 /var/lib/bind/primary-aut /var/lib/bind/primary-rev
    ```
    > Se você preferir `rsync` (mais robusto para backups), aplique a mesma lógica por pasta `.../keys`.
 3. Confirme que as zonas no `named.conf.local` ainda têm:
-   - `key-directory "/var/lib/bind/master-aut/exemplo.com.br/keys";`
-   - `key-directory "/var/lib/bind/master-rev/IPv4/203.0.113.x/keys";`
-   - `key-directory "/var/lib/bind/master-rev/IPv6/2001.db8.abcd.x/keys";`
+   - `key-directory "/var/lib/bind/primary-aut/exemplo.com.br/keys";`
+   - `key-directory "/var/lib/bind/primary-rev/IPv4/203.0.113.x/keys";`
+   - `key-directory "/var/lib/bind/primary-rev/IPv6/2001.db8.abcd.x/keys";`
    - `dnssec-policy default;`
    - `inline-signing yes;`
 4. Reinicie e valide DNSSEC (passo 14.3 e DNSViz).
@@ -1767,9 +1770,9 @@ No ns2, copie as zonas para um lugar seguro:
 
 ```bash
 sudo install -d -m 0700 /root/dr-zones
-sudo cp -a /var/cache/bind/slave-aut/exemplo.com.br/exemplo.com.br.hosts.signed /root/dr-zones/
-sudo cp -a /var/cache/bind/slave-rev/IPv4/203.0.113.x/203.0.113.rev.signed /root/dr-zones/
-sudo cp -a /var/cache/bind/slave-rev/IPv6/2001.db8.abcd.x/2001.db8.abcd.rev.signed /root/dr-zones/
+sudo cp -a /var/cache/bind/secondary-aut/exemplo.com.br/exemplo.com.br.hosts.signed /root/dr-zones/
+sudo cp -a /var/cache/bind/secondary-rev/IPv4/203.0.113.x/203.0.113.rev.signed /root/dr-zones/
+sudo cp -a /var/cache/bind/secondary-rev/IPv6/2001.db8.abcd.x/2001.db8.abcd.rev.signed /root/dr-zones/
 ls -la /root/dr-zones
 ```
 
@@ -1782,16 +1785,16 @@ scp /root/dr-zones/* root@203.0.113.10:/root/dr-zones/
 No ns1, use isso como **referência** e reconstrua os arquivos “fonte”, ou restaure do seu backup.
 
 ```bash
-sudo install -d -o bind -g bind -m 0750 /var/lib/bind/master-aut/exemplo.com.br/keys
-sudo install -d -o bind -g bind -m 0750 /var/lib/bind/master-rev/IPv4/203.0.113.x/keys
-sudo install -d -o bind -g bind -m 0750 /var/lib/bind/master-rev/IPv6/2001.db8.abcd.x/keys
+sudo install -d -o bind -g bind -m 0750 /var/lib/bind/primary-aut/exemplo.com.br/keys
+sudo install -d -o bind -g bind -m 0750 /var/lib/bind/primary-rev/IPv4/203.0.113.x/keys
+sudo install -d -o bind -g bind -m 0750 /var/lib/bind/primary-rev/IPv6/2001.db8.abcd.x/keys
 
 # Exemplo (se você tiver os arquivos "fonte" do backup)
-# sudo cp -a /CAMINHO_DO_BACKUP/exemplo.com.br.hosts /var/lib/bind/master-aut/exemplo.com.br/exemplo.com.br.hosts
-# sudo cp -a /CAMINHO_DO_BACKUP/203.0.113.rev       /var/lib/bind/master-rev/IPv4/203.0.113.x/203.0.113.rev
-# sudo cp -a /CAMINHO_DO_BACKUP/2001.db8.abcd.rev   /var/lib/bind/master-rev/IPv6/2001.db8.abcd.x/2001.db8.abcd.rev
+# sudo cp -a /CAMINHO_DO_BACKUP/exemplo.com.br.hosts /var/lib/bind/primary-aut/exemplo.com.br/exemplo.com.br.hosts
+# sudo cp -a /CAMINHO_DO_BACKUP/203.0.113.rev       /var/lib/bind/primary-rev/IPv4/203.0.113.x/203.0.113.rev
+# sudo cp -a /CAMINHO_DO_BACKUP/2001.db8.abcd.rev   /var/lib/bind/primary-rev/IPv6/2001.db8.abcd.x/2001.db8.abcd.rev
 
-sudo chown -R bind:bind /var/lib/bind/master-aut /var/lib/bind/master-rev
+sudo chown -R bind:bind /var/lib/bind/primary-aut /var/lib/bind/primary-rev
 ```
 
 Antes de subir o serviço no ns1, é recomendável validar **em lote** (isso reduz o risco de “subir quebrado”):
@@ -1809,9 +1812,9 @@ while read -r ZONE FILE; do
   echo "== $ZONE ($FILE) =="
   sudo named-checkzone "$ZONE" "$FILE" || exit 1
 done <<'EOF'
-exemplo.com.br /var/lib/bind/master-aut/exemplo.com.br/exemplo.com.br.hosts
-113.0.203.in-addr.arpa /var/lib/bind/master-rev/IPv4/203.0.113.x/203.0.113.rev
-d.c.b.a.8.b.d.0.1.0.0.2.ip6.arpa /var/lib/bind/master-rev/IPv6/2001.db8.abcd.x/2001.db8.abcd.rev
+exemplo.com.br /var/lib/bind/primary-aut/exemplo.com.br/exemplo.com.br.hosts
+113.0.203.in-addr.arpa /var/lib/bind/primary-rev/IPv4/203.0.113.x/203.0.113.rev
+d.c.b.a.8.b.d.0.1.0.0.2.ip6.arpa /var/lib/bind/primary-rev/IPv6/2001.db8.abcd.x/2001.db8.abcd.rev
 EOF
 ```
 
@@ -1851,6 +1854,7 @@ Depois que tudo estiver estável (autoridade + transferência + serial correto):
 ### BIND / ISC (oficial)
 
 - BIND 9 Reference: https://bind9.readthedocs.io/en/latest/reference.html
+- BIND 9 Configuration Reference — zone types (`primary`, `secondary`, `primaries`): https://bind9.readthedocs.io/en/v9.20.2/reference.html#zone-block-definition-and-usage
 - Categorias de log (`rate-limit`, `query-errors`, etc.): https://bind9.readthedocs.io/en/v9.20.6/reference/logging-categories.html
 - Nameserver Basics (autoritativo vs resolvedor recursivo): https://kb.isc.org/docs/aa-00817
 - TSIG — `server { keys { ... } }` (Security Configurations): https://bind9.readthedocs.io/en/v9.18.30/chapter7.html
@@ -1893,4 +1897,4 @@ Depois que tudo estiver estável (autoridade + transferência + serial correto):
 ## Créditos
 
 Autor: Paulo Rocha  
-Repositório: https://github.com/PauloNRocha
+Repositório: https://github.com/PauloNRocha/tutoriais-infra-linux
