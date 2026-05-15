@@ -18,7 +18,7 @@ Muita coisa aqui existe por um motivo simples: eu também esqueço. Então prefi
 
 Os guias daqui tentam ser detalhados porque eu realmente uso esse material como referência de trabalho, não como texto de vitrine.
 
-Uso IA para revisão de escrita, organização e acabamento dos guias.
+Uso IA como apoio para revisar escrita, organizar ideias e melhorar acabamento, mas a base dos guias vem de uso real, teste, erro, manutenção e rotina de infraestrutura.
 
 Pode acontecer de algo não funcionar para você exatamente da mesma forma que funcionou no meu cenário, caso opte por replicar em outra distro. Então use os guias como base prática, mas revise e adapte conforme necessário antes de aplicar.
 
@@ -117,4 +117,10 @@ Esse repositório é público porque, além de me ajudar a manter tudo centraliz
 
 Se algum guia te ajudar, melhor ainda. Se não encaixar exatamente no seu ambiente, use como base e adapte para a sua realidade.
 
-GitHub: https://github.com/PauloNRocha
+## Licença
+
+O conteúdo deste repositório está licenciado sob a Creative Commons Attribution 4.0 International (CC BY 4.0).
+
+Na prática: você pode usar, copiar, adaptar e compartilhar os guias, inclusive em ambiente profissional, desde que mantenha a atribuição ao autor.
+
+GitHub: https://github.com/PauloNRocha/tutoriais-infra-linux
