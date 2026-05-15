@@ -1,7 +1,7 @@
 # Guia de Produção: Acesso Remoto Gráfico no Debian 12 (XRDP, AnyDesk, TeamViewer)
 
 *Criado em: 04 de dezembro de 2025*  
-*Última atualização em: 14 de março de 2026*
+*Última atualização em: 15 de maio de 2026*
 
 Tem situação em que SSH não basta e eu realmente preciso ver a interface gráfica do servidor. Este guia junta o caminho que usei no Debian 12 para isso, cobrindo **XRDP**, **AnyDesk** e **TeamViewer**, além dos problemas mais comuns que aparecem quando esse tipo de acesso começa a dar trabalho.
 
@@ -48,7 +48,7 @@ sudo apt update
 2. Instale o XFCE:
 
 ```bash
-sudo apt install xfce4 xfce4-goodies -y
+sudo apt install xfce4 xfce4-goodies
 ```
 
 ### 2.3 Instalar e Configurar o XRDP
@@ -56,7 +56,7 @@ sudo apt install xfce4 xfce4-goodies -y
 1. Instale o serviço:
 
 ```bash
-sudo apt install xrdp -y
+sudo apt install xrdp
 ```
 
 2. Ajuste a sessão padrão para usar XFCE:
@@ -66,11 +66,15 @@ echo "startxfce4" | sudo tee /etc/skel/.xsession
 echo "startxfce4" | sudo tee ~/.xsession
 ```
 
-3. Se o servidor usa `nftables`, uma liberação mínima para teste ficaria assim:
+3. Se o servidor usa `nftables`, libere o acesso apenas da rede ou IP de gestão.
+
+Exemplo:
 
 ```bash
-nft add rule inet filtro input tcp dport 3389 counter accept
+sudo nft add rule inet filtro input ip saddr 192.0.2.10 tcp dport 3389 counter accept
 ```
+
+Substitua `192.0.2.10` pelo IP público ou pela rede autorizada a acessar o RDP.
 
 4. Reinicie o serviço:
 
@@ -80,8 +84,9 @@ sudo systemctl restart xrdp
 
 Observação:
 
-- se você já tiver uma policy `drop`, não adicione essa regra sem ajustar também a origem permitida;
-- em ambiente de produção, o ideal é restringir `3389/tcp` por IP ou rede de gestão, não liberar geral.
+- se você já tiver uma policy `drop`, confirme se a regra entrou na chain correta;
+- evite liberar `3389/tcp` para a internet inteira;
+- em ambiente de produção, prefira acessar o XRDP por VPN ou por uma rede de gestão conhecida.
 
 ### 2.4 Solução de Problemas do XRDP
 - **Conflito de Sessões:** Para evitar problemas ao logar com o mesmo usuário local e remotamente, a recomendação é **usar um usuário dedicado para o acesso remoto**.
@@ -98,11 +103,15 @@ Observação:
 
 Estas ferramentas são mais fáceis de configurar, pois fazem a "ponte" através dos servidores da empresa, evitando a necessidade de abrir portas no firewall.
 
+O ponto fraco é outro: são ferramentas proprietárias, dependem da infraestrutura de terceiros e podem ter regras de licença para uso profissional. Eu costumo tratar AnyDesk e TeamViewer como alternativa prática para suporte pontual, não como substituto de um acesso bem controlado por VPN, SSH ou rede de gestão.
+
 > **Nota sobre Versões:** Os links de download e métodos de instalação podem mudar. Se os comandos abaixo falharem, sempre consulte o site oficial do AnyDesk ou TeamViewer para obter as instruções mais recentes.
 
 ### 3.1 Instalar AnyDesk
 
 1. Baixe o pacote `.deb` apropriado no site oficial do AnyDesk.
+
+Exemplo:
 
 ```bash
 cd /tmp
@@ -112,7 +121,7 @@ wget https://download.anydesk.com/linux/anydesk_8.0.0-1_amd64.deb
 2. Instale com o `apt`:
 
 ```bash
-sudo apt install ./anydesk_8.0.0-1_amd64.deb -y
+sudo apt install ./anydesk_8.0.0-1_amd64.deb
 ```
 
 Depois da instalação, execute `anydesk` no terminal para iniciar e obter o ID de conexão.
@@ -134,9 +143,14 @@ wget https://download.teamviewer.com/download/linux/teamviewer_amd64.deb
 2. Instale o pacote:
 
 ```bash
-sudo apt install ./teamviewer_amd64.deb -y
+sudo apt install ./teamviewer_amd64.deb
 ```
 Após a instalação, execute `teamviewer` para configurar o acesso.
+
+Observação:
+
+- verifique a licença aplicável ao seu tipo de uso antes de usar em ambiente profissional;
+- se a máquina for de produção, documente quem tem acesso e desative o acesso quando não for mais necessário.
 
 ---
 
@@ -144,13 +158,20 @@ Após a instalação, execute `teamviewer` para configurar o acesso.
 ## 4. Solução de Problemas Comuns
 
 ### 4.1 Como forçar o encerramento de uma sessão remota
-Se um usuário ficou com a sessão "presa", você pode derrubá-lo com o comando `pkill`.
+Se um usuário ficou com a sessão "presa", tente primeiro encerrar os processos de forma normal.
 
 ```bash
 # Substitua NOME_DO_USUARIO pelo login do usuário
-sudo pkill -9 -u NOME_DO_USUARIO
+sudo pkill -TERM -u NOME_DO_USUARIO
 ```
-Isso força o encerramento de todos os processos daquele usuário, desconectando-o.
+
+Se não resolver, use `KILL` como último recurso:
+
+```bash
+sudo pkill -KILL -u NOME_DO_USUARIO
+```
+
+Isso encerra todos os processos daquele usuário, desconectando a sessão. Use com cuidado, porque processos abertos podem perder dados não salvos.
 
 ### 4.2 Encerramento de VMs ao logar remotamente
 Se suas máquinas virtuais (Virt-Manager, etc.) são encerradas ao iniciar uma sessão gráfica, pode ser um conflito de recursos (principalmente RAM).
@@ -184,11 +205,11 @@ Veja também: [guia de produção de acesso SSH por chave pública](./guia_produ
 
 ### Firewall (referência)
 
-- `ufw(8)` (manpage Debian): https://manpages.debian.org/bookworm/ufw/ufw.8.en.html
+- `nft(8)` (manpage Debian): https://manpages.debian.org/bookworm/nftables/nft.8.en.html
 
 ---
 
 ## Créditos
 
 Autor: Paulo Rocha  
-Repositório: https://github.com/PauloNRocha
+Repositório: https://github.com/PauloNRocha/tutoriais-infra-linux
