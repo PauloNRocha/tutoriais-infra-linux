@@ -1,6 +1,7 @@
 # Guia de Produção: Recuperação de zona BIND9 com DNSSEC após erro de sintaxe e impacto em DKIM/DMARC
 
-*Criado em: 13 de março de 2026*
+*Criado em: 13 de março de 2026*  
+*Última atualização em: 15 de maio de 2026*
 
 Resolvi registrar este guia depois de um incidente real em produção. O problema começou com o cPanel reclamando de divergência em registros de e-mail, especialmente DMARC e DKIM. Ao corrigir isso manualmente no servidor DNS, a zona acabou sendo salva com erro de sintaxe, o BIND deixou de carregar a zona assinada com DNSSEC e o domínio passou a responder `SERVFAIL`.
 
@@ -11,7 +12,9 @@ Veja como implantar o BIND9: [guia de produção do BIND9 no Debian 13](./guia_p
 Nos exemplos abaixo, vou usar um domínio fictício para facilitar reaproveitamento:
 
 - domínio: `exemplo.com.br`
-- arquivo principal da zona: `/var/lib/bind/master-aut/exemplo.com.br/exemplo.com.br.hosts`
+- arquivo principal da zona: `/var/lib/bind/primary-aut/exemplo.com.br/exemplo.com.br.hosts`
+
+Observação: se seu ambiente antigo ainda usa caminhos como `master-aut`, adapte os comandos ao caminho real. No repositório, o padrão atual dos guias é `primary-*` e `secondary-*`.
 
 ---
 
@@ -25,7 +28,8 @@ Nos exemplos abaixo, vou usar um domínio fictício para facilitar reaproveitame
 6. [Verificações pós-recuperação](#6-verificações-pós-recuperação)
 7. [O que esse incidente ensina](#7-o-que-esse-incidente-ensina)
 8. [Linha do tempo resumida do incidente](#8-linha-do-tempo-resumida-do-incidente)
-9. [Referências](#9-referências)
+9. [Cuidados antes de repetir isso em outro ambiente](#9-cuidados-antes-de-repetir-isso-em-outro-ambiente)
+10. [Referências](#10-referências)
 
 ---
 
@@ -53,7 +57,7 @@ O sintoma mais claro foi `SERVFAIL` na zona.
 Exemplo:
 
 ```bash
-dig exemplo.com.br SOA @ns1.exemplo.com.br
+dig @ns1.exemplo.com.br exemplo.com.br SOA +noall +answer +comments
 ```
 
 Resposta típica:
@@ -65,15 +69,15 @@ status: SERVFAIL
 Como o incidente começou na camada de e-mail, também faz sentido testar logo os registros críticos:
 
 ```bash
-dig default._domainkey.exemplo.com.br TXT @ns1.exemplo.com.br
-dig _dmarc.exemplo.com.br TXT @ns1.exemplo.com.br
+dig @ns1.exemplo.com.br default._domainkey.exemplo.com.br TXT +noall +answer
+dig @ns1.exemplo.com.br _dmarc.exemplo.com.br TXT +noall +answer
 ```
 
 Se houver mais de um nameserver autoritativo, teste os dois separadamente:
 
 ```bash
-dig exemplo.com.br SOA @ns1.exemplo.com.br
-dig exemplo.com.br SOA @ns2.exemplo.com.br
+dig @ns1.exemplo.com.br exemplo.com.br SOA +noall +answer
+dig @ns2.exemplo.com.br exemplo.com.br SOA +noall +answer
 ```
 
 No caso que motivou este guia, o `ns1` já estava com `SERVFAIL`, enquanto o `ns2` ainda aparecia com estado antigo da zona assinada.
@@ -85,8 +89,15 @@ No caso que motivou este guia, o `ns1` já estava com `SERVFAIL`, enquanto o `ns
 O primeiro passo é validar o arquivo principal da zona com o utilitário do próprio BIND:
 
 ```bash
-named-checkzone exemplo.com.br \
-/var/lib/bind/master-aut/exemplo.com.br/exemplo.com.br.hosts
+sudo named-checkzone exemplo.com.br \
+/var/lib/bind/primary-aut/exemplo.com.br/exemplo.com.br.hosts
+```
+
+Se a zona usa journal e você quer validar também considerando o `.jnl`, use:
+
+```bash
+sudo named-checkzone -j exemplo.com.br \
+/var/lib/bind/primary-aut/exemplo.com.br/exemplo.com.br.hosts
 ```
 
 Se houver erro de sintaxe, a saída costuma ser parecida com esta:
@@ -135,23 +146,33 @@ Quando o arquivo principal quebra, esses arquivos podem ficar inconsistentes com
 
 ## 5. Procedimento de recuperação
 
+> Atenção: execute os passos abaixo em uma janela de manutenção. Você vai parar o BIND no servidor afetado e mexer em arquivos auxiliares da zona assinada.
+
 ### 5.1 Criar diretório de segurança para o incidente
 
 ```bash
-mkdir -p /root/dns-recovery-example
+RECOVERY_DIR="/root/dns-recovery-exemplo-$(date +%F-%H%M%S)"
+echo "$RECOVERY_DIR"
+sudo install -d -m 0700 "$RECOVERY_DIR"
 ```
+
+Mantenha a mesma sessão de terminal aberta, porque os próximos comandos usam a variável `RECOVERY_DIR`.
 
 ### 5.2 Parar o BIND
 
+No guia principal, o serviço está como `named`:
+
 ```bash
-systemctl stop bind9
+sudo systemctl stop named
 ```
+
+Se no seu Debian/Ubuntu o serviço estiver como `bind9`, troque `named` por `bind9`.
 
 ### 5.3 Guardar uma cópia do arquivo principal da zona
 
 ```bash
-cp -a /var/lib/bind/master-aut/exemplo.com.br/exemplo.com.br.hosts \
-/root/dns-recovery-example/
+sudo cp -a /var/lib/bind/primary-aut/exemplo.com.br/exemplo.com.br.hosts \
+"$RECOVERY_DIR"/
 ```
 
 Isso é importante porque o arquivo principal foi justamente o ponto onde o erro entrou.
@@ -159,10 +180,20 @@ Isso é importante porque o arquivo principal foi justamente o ponto onde o erro
 ### 5.4 Mover os arquivos auxiliares da zona assinada
 
 ```bash
-mv -v /var/lib/bind/master-aut/exemplo.com.br/exemplo.com.br.hosts.jnl /root/dns-recovery-example/
-mv -v /var/lib/bind/master-aut/exemplo.com.br/exemplo.com.br.hosts.signed /root/dns-recovery-example/
-mv -v /var/lib/bind/master-aut/exemplo.com.br/exemplo.com.br.hosts.signed.jnl /root/dns-recovery-example/
-mv -v /var/lib/bind/master-aut/exemplo.com.br/exemplo.com.br.hosts.jbk /root/dns-recovery-example/
+ZONE_FILE="/var/lib/bind/primary-aut/exemplo.com.br/exemplo.com.br.hosts"
+
+for f in \
+  "$ZONE_FILE.jnl" \
+  "$ZONE_FILE.signed" \
+  "$ZONE_FILE.signed.jnl" \
+  "$ZONE_FILE.jbk"
+do
+  if [ -e "$f" ]; then
+    sudo mv -v "$f" "$RECOVERY_DIR"/
+  else
+    echo "não existe: $f"
+  fi
+done
 ```
 
 Motivo:
@@ -174,14 +205,14 @@ Motivo:
 ### 5.5 Corrigir o erro de sintaxe na zona
 
 ```bash
-nano /var/lib/bind/master-aut/exemplo.com.br/exemplo.com.br.hosts
+sudo -u bind nano /var/lib/bind/primary-aut/exemplo.com.br/exemplo.com.br.hosts
 ```
 
 ### 5.6 Validar novamente a zona antes de subir o serviço
 
 ```bash
-named-checkzone exemplo.com.br \
-/var/lib/bind/master-aut/exemplo.com.br/exemplo.com.br.hosts
+sudo named-checkzone exemplo.com.br \
+/var/lib/bind/primary-aut/exemplo.com.br/exemplo.com.br.hosts
 ```
 
 Saída esperada:
@@ -196,7 +227,7 @@ Se ainda falhar aqui, não adianta subir o serviço. Corrija a zona primeiro.
 ### 5.7 Validar a configuração geral do BIND
 
 ```bash
-named-checkconf
+sudo named-checkconf
 ```
 
 Se aparecer algo como:
@@ -210,13 +241,20 @@ isso não costuma ser a causa direta do `SERVFAIL`, mas é sinal de configuraç�
 ### 5.8 Iniciar novamente o BIND
 
 ```bash
-systemctl start bind9
+sudo systemctl start named
+```
+
+Confira se o serviço subiu sem erro:
+
+```bash
+sudo systemctl status named --no-pager
+sudo journalctl -u named -n 100 --no-pager
 ```
 
 ### 5.9 Confirmar se a zona voltou a responder no primário
 
 ```bash
-dig exemplo.com.br SOA @ns1.exemplo.com.br
+dig @ns1.exemplo.com.br exemplo.com.br SOA +noall +answer +comments
 ```
 
 Resposta esperada:
@@ -228,8 +266,8 @@ exemplo.com.br. 86400 IN SOA ns1.exemplo.com.br. hostmaster.exemplo.com.br.
 ### 5.10 Confirmar se o secundário recebeu a zona nova
 
 ```bash
-dig exemplo.com.br SOA @ns1.exemplo.com.br
-dig exemplo.com.br SOA @ns2.exemplo.com.br
+dig @ns1.exemplo.com.br exemplo.com.br SOA +noall +answer
+dig @ns2.exemplo.com.br exemplo.com.br SOA +noall +answer
 ```
 
 Aqui o objetivo é comparar:
@@ -248,14 +286,14 @@ Se o `ns2` continuar servindo serial antigo, chave antiga ou estado antigo da zo
 Como o incidente começou por causa de e-mail, vale checar primeiro DKIM e DMARC:
 
 ```bash
-dig default._domainkey.exemplo.com.br TXT @ns1.exemplo.com.br
-dig _dmarc.exemplo.com.br TXT @ns1.exemplo.com.br
+dig @ns1.exemplo.com.br default._domainkey.exemplo.com.br TXT +noall +answer
+dig @ns1.exemplo.com.br _dmarc.exemplo.com.br TXT +noall +answer
 ```
 
 ### 6.2 Verificar status da zona no `rndc`
 
 ```bash
-rndc zonestatus exemplo.com.br
+sudo rndc zonestatus exemplo.com.br
 ```
 
 Exemplo de saída:
@@ -276,10 +314,10 @@ Isso ajuda a confirmar:
 ### 6.3 Verificar DNSSEC
 
 ```bash
-dig +dnssec exemplo.com.br SOA
-dig DS exemplo.com.br @a.dns.br
-dig DNSKEY exemplo.com.br @ns1.exemplo.com.br
-dig DNSKEY exemplo.com.br @ns2.exemplo.com.br
+dig @ns1.exemplo.com.br exemplo.com.br SOA +dnssec +noall +answer +comments
+dig @a.dns.br exemplo.com.br DS +noall +answer
+dig @ns1.exemplo.com.br exemplo.com.br DNSKEY +noall +answer
+dig @ns2.exemplo.com.br exemplo.com.br DNSKEY +noall +answer
 ```
 
 Se o DS do pai continuar compatível com a DNSKEY da zona, a cadeia DNSSEC permanece íntegra.
@@ -313,16 +351,38 @@ Esse incidente deixa três lições bem claras:
 
 ---
 
-## 9. Referências
+## 9. Cuidados antes de repetir isso em outro ambiente
+
+Este procedimento foi pensado para uma zona autoritativa estática, editada manualmente, com DNSSEC via `inline-signing`.
+
+Antes de aplicar em outro ambiente, confirme:
+
+- se a zona recebe atualização dinâmica (`allow-update`, `update-policy`, `nsupdate` ou integração automática);
+- se existem alterações pendentes apenas em journal;
+- se o Secondary ainda tem uma cópia útil para comparação;
+- se o DS publicado no pai continua compatível com a DNSKEY da zona.
+
+Se a zona usa atualização dinâmica, o fluxo muda. A documentação do BIND orienta usar `rndc freeze`, editar a zona e depois `rndc thaw`. Não saia movendo journal de zona dinâmica sem entender o impacto, porque você pode descartar alterações que ainda não foram consolidadas no arquivo fonte.
+
+Também vale guardar o diretório `RECOVERY_DIR` por alguns dias, até ter certeza de que:
+
+- o Primary e o Secondary estão com o mesmo serial;
+- DNSSEC validou;
+- DKIM/DMARC voltaram a responder como esperado;
+- não há reclamação de validadores externos.
+
+---
+
+## 10. Referências
 
 - BIND 9 Administrator Reference Manual: https://bind9.readthedocs.io
-- `named-checkzone` / `named-compilezone`: https://bind9.readthedocs.io/en/stable/manpages.html#named-checkzone-zone-file-validation-tool
-- BIND 9 Configuration Reference (`inline-signing`): https://bind9.readthedocs.io/en/v9.16.44/reference.html
-- `rndc` / `zonestatus`: https://bind9.readthedocs.io/en/stable/manpages.html
+- `named-checkzone` / `named-compilezone`: https://bind9.readthedocs.io/en/v9.21.16/manpages.html#named-checkzone-zone-file-validation-tool
+- BIND 9 Configuration Reference (`inline-signing`): https://bind9.readthedocs.io/en/v9.20.2/reference.html#zone-block-definition-and-usage
+- `rndc` / `zonestatus`: https://bind9.readthedocs.io/en/v9.21.16/manpages.html#rndc-name-server-control-utility
 
 ---
 
 ## Créditos
 
 Autor: Paulo Rocha  
-Repositório: https://github.com/PauloNRocha
+Repositório: https://github.com/PauloNRocha/tutoriais-infra-linux
