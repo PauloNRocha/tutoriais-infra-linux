@@ -1,10 +1,11 @@
 # Guia de Produção: Acesso SSH por chave pública (porta customizada) em servidores Linux
 
 *Criado em: 30 de janeiro de 2026*  
+*Última atualização em: 15 de maio de 2026*
 
-Quando o ambiente começa a ter mais de um servidor, mais de uma chave e mais de um operador, acesso SSH vira bagunça muito fácil. Este guia registra o padrão que eu prefiro para produção: **chave pública**, **porta customizada**, **usuário comum + sudo** e nada de login direto como `root`.
+Quando começo a acumular servidores, o SSH precisa deixar de ser improviso. Uma chave com nome ruim, uma porta anotada em lugar errado ou um login direto como `root` já são suficientes para transformar uma manutenção simples em risco de lockout. Aqui eu deixo registrado o padrão que prefiro usar em produção: **chave pública dedicada**, **porta customizada**, **usuário comum + sudo** e cliente organizado por aliases.
 
-A intenção aqui é deixar o acesso previsível e fácil de manter: saber **qual chave** está em uso, reduzir risco de lockout e evitar confusão no cliente quando existem várias identidades.
+O foco é o básico bem-feito para Debian/Ubuntu e servidores Linux parecidos. Ele não substitui um desenho maior com VPN, bastion host, MFA ou política centralizada de acesso, mas resolve a parte que normalmente mais dá margem para erro no dia a dia.
 
 ---
 
@@ -18,7 +19,8 @@ A intenção aqui é deixar o acesso previsível e fácil de manter: saber **qua
 7. [Como o SSH aplica a configuração quando você usa alias (Host vs alias)](#7)
 8. [Boas práticas](#8)
 9. [O que NÃO fazer](#9)
-10. [Checklist final](#10)
+10. [Troubleshooting rápido](#10)
+11. [Checklist final](#11)
 
 ---
 
@@ -88,8 +90,10 @@ Premissa: você tem um usuário no servidor (ex.: `operador`) com acesso inicial
 ### 4.1 Copiar a chave pública (porta customizada)
 
 ```bash
-ssh-copy-id -i ~/.ssh/id_ed25519_infra.pub -p 2222 operador@IP_OU_HOST
+ssh-copy-id -i ~/.ssh/id_ed25519_infra.pub -p 2222 operador@203.0.113.10
 ```
+
+Neste exemplo, `203.0.113.10` representa o IP do servidor. Troque pelo IP ou hostname real do seu ambiente.
 
 Atenção à ordem dos parâmetros: a porta (`-p`) deve vir antes do `usuario@host`.
 
@@ -98,7 +102,7 @@ Alternativa equivalente: `ssh-copy-id ... -o "Port=2222" ...`
 ### 4.2 Testar forçando a chave correta antes de mexer no servidor
 
 ```bash
-ssh -p 2222 -i ~/.ssh/id_ed25519_infra -o IdentitiesOnly=yes operador@IP_OU_HOST
+ssh -p 2222 -i ~/.ssh/id_ed25519_infra -o IdentitiesOnly=yes operador@203.0.113.10
 ```
 
 Resultado esperado:
@@ -115,7 +119,13 @@ Se for solicitado ainda para colocar senha, **não avance** para desativar a sen
 
 ### 5.1 Ajustar `sshd_config`
 
-No servidor, edite:
+No servidor, faça um backup antes de mexer no SSH:
+
+```bash
+sudo cp -a /etc/ssh/sshd_config /etc/ssh/sshd_config.bak.$(date +%F-%H%M%S)
+```
+
+Edite o arquivo:
 
 ```bash
 sudo nano /etc/ssh/sshd_config
@@ -138,7 +148,33 @@ Observações:
 - Em algumas distros antigas ou imagens customizadas, pode existir `ChallengeResponseAuthentication yes`. Isso pode conflitar com `KbdInteractiveAuthentication` e manter uma forma de autenticação “interativa” ativa.
   - Se existir `ChallengeResponseAuthentication`, desative também (`ChallengeResponseAuthentication no`).
 
-### 5.2 Validar sintaxe e recarregar sem derrubar sessões
+### 5.2 Preparar firewall antes de recarregar o SSH
+
+Se a porta SSH foi alterada para `2222/tcp`, libere somente a origem de administração antes de recarregar o serviço.
+
+Exemplo, considerando que sua tabela e chain se chamem `inet filtro input`:
+
+```bash
+sudo nft add rule inet filtro input ip saddr 198.51.100.10 tcp dport 2222 counter accept
+```
+
+Substitua `198.51.100.10` pelo IP público, VPN ou rede de gestão autorizada.
+
+Se o seu firewall usa outro nome de tabela ou chain, confira antes com:
+
+```bash
+sudo nft list ruleset
+```
+
+Não libere a porta SSH customizada para a internet inteira se não houver necessidade.
+
+Observação importante: o comando acima adiciona uma regra em tempo de execução. Se você já usa um arquivo persistente, como `/etc/nftables.conf` ou outro arquivo carregado no boot, coloque a regra no arquivo correto e valide antes de aplicar:
+
+```bash
+sudo nft -c -f /etc/nftables.conf
+```
+
+### 5.3 Validar sintaxe e recarregar sem derrubar sessões
 
 Valide a configuração:
 
@@ -156,7 +192,7 @@ sudo systemctl reload ssh
 
 Boa prática operacional: mantenha uma sessão SSH já conectada aberta e teste uma nova conexão em paralelo antes de fechar a sessão atual.
 
-### 5.3 Permissões no servidor (usuário alvo)
+### 5.4 Permissões no servidor (usuário alvo)
 
 No servidor, para o usuário que vai logar (ex.: `operador`):
 
@@ -191,7 +227,7 @@ Padrão adotado aqui:
 
 ### 6.1 Criar/ajustar `~/.ssh/config` (fonte da verdade)
 
-Edite:
+Edite o arquivo:
 
 ```bash
 nano ~/.ssh/config
@@ -202,7 +238,7 @@ Exemplo, cole o conteúdo e ajuste `HostName`, `Port`, `User` e `IdentityFile` p
 ```text
 # ~/.ssh/config
 
-# Padrão em todos os servidores de usando mesma chave
+# Padrão em todos os servidores usando a mesma chave
 Host servidor-*
 
 # Se a sua chave tem outro nome (ex.: ~/.ssh/infra_ed25519), ajuste aqui.
@@ -260,7 +296,7 @@ ssh -vvv servidor-unbound
 
 ### 6.2 Criar `~/.servidores` (atalhos)
 
-Edite:
+Crie o arquivo de atalhos:
 
 ```bash
 nano ~/.servidores
@@ -352,7 +388,8 @@ Exemplo mental:
 
 ---
 
-### Troubleshooting rápido (quando algo der errado)
+<a id="10"></a>
+## 10) Troubleshooting rápido (quando algo der errado)
 
 Cliente (use só quando necessário):
 
@@ -369,11 +406,13 @@ sudo journalctl -u ssh -n 100 --no-pager
 Validar configuração efetiva (o que o `sshd` está enxergando):
 
 ```bash
-sudo sshd -T | egrep '^(port|pubkeyauthentication|passwordauthentication|kbdinteractiveauthentication|challengeresponseauthentication|permitrootlogin)\b'
+sudo sshd -T | grep -E '^(port|pubkeyauthentication|passwordauthentication|kbdinteractiveauthentication|challengeresponseauthentication|permitrootlogin)\b'
 ```
 
-<a id="10"></a>
-## 10) Checklist rápido (validação)
+---
+
+<a id="11"></a>
+## 11) Checklist rápido (validação)
 
 No cliente:
 
@@ -396,7 +435,17 @@ sudo sshd -T | grep -E 'passwordauthentication|kbdinteractiveauthentication|perm
 
 ---
 
+## Referências
+
+- `ssh-keygen(1)` (manpage Debian): https://manpages.debian.org/bookworm/openssh-client/ssh-keygen.1.en.html
+- `ssh-copy-id(1)` (manpage Debian): https://manpages.debian.org/bookworm/openssh-client/ssh-copy-id.1.en.html
+- `ssh_config(5)` (manpage Debian): https://manpages.debian.org/bookworm/openssh-client/ssh_config.5.en.html
+- `sshd_config(5)` (manpage Debian): https://manpages.debian.org/bookworm/openssh-server/sshd_config.5.en.html
+- `nft(8)` (manpage Debian): https://manpages.debian.org/bookworm/nftables/nft.8.en.html
+
+---
+
 ## Créditos
 
 Autor: Paulo Rocha  
-Repositório: https://github.com/PauloNRocha
+Repositório: https://github.com/PauloNRocha/tutoriais-infra-linux
