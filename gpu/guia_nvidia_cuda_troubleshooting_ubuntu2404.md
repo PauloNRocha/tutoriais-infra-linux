@@ -3,9 +3,11 @@
 *Criado em: 29 de setembro de 2025*  
 *Última atualização em: 10 de março de 2026*
 
-Quando NVIDIA e CUDA quebram no Ubuntu, quase sempre a falha está em meia dúzia de lugares repetidos. Este guia existe para acelerar esse diagnóstico no Ubuntu 24.04: **módulo do kernel**, **Secure Boot**, **headers/DKMS**, **conflito entre métodos de instalação** ou ausência do **CUDA Toolkit**.
+Quando NVIDIA e CUDA quebram no Ubuntu, o problema quase sempre cai nos mesmos pontos: **módulo do kernel**, **Secure Boot**, **headers/DKMS**, mistura entre instalação via `apt` e `.run`, ou ausência do **CUDA Toolkit**. A ideia aqui é ter um roteiro curto para chegar nesses pontos sem perder tempo tentando lembrar cada comando.
 
-Esse troubleshooting foi usado, por exemplo, em um notebook com GPU híbrida e NVIDIA GTX 1650. As versões citadas de driver, CUDA e kernel são **exemplos**; ajuste para o seu ambiente.
+Usei esse roteiro em um notebook com GPU híbrida e NVIDIA GTX 1650, mas ele também serve como referência para outros cenários parecidos. As versões citadas de driver, CUDA e kernel são **exemplos**; ajuste para o seu ambiente.
+
+Veja também: [Guia NVIDIA + CUDA + PRIME no Ubuntu 24.04](guia_nvidia_cuda_prime_ubuntu2404.md)
 
 ---
 
@@ -26,6 +28,7 @@ Esse troubleshooting foi usado, por exemplo, em um notebook com GPU híbrida e N
 14. [“No NVIDIA modules detected in initramfs”](#14)
 15. [Escolha “NVIDIA Proprietary” vs “MIT/GPL”](#15)
 16. [Checklist final e comandos úteis](#16)
+17. [Referências](#17)
 
 ---
 
@@ -640,6 +643,7 @@ Resolvi juntar esse material porque esse tipo de problema costuma consumir tempo
 
 ---
 
+<a id="17"></a>
 ## Referências (fontes para consulta)
 
 ### NVIDIA / Ubuntu (base)
@@ -658,4 +662,4 @@ Resolvi juntar esse material porque esse tipo de problema costuma consumir tempo
 ## Créditos
 
 Autor: Paulo Rocha  
-Repositório: https://github.com/PauloNRocha
+Repositório: https://github.com/PauloNRocha/tutoriais-infra-linux
