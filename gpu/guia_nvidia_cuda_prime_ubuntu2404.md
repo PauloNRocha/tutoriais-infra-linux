@@ -3,7 +3,7 @@
 *Criado em: 25 de setembro de 2025*  
 *Última atualização em: 11 de março de 2026*
 
-Esse guia nasceu da necessidade de deixar um procedimento reproduzível para instalar o **driver proprietário NVIDIA**, habilitar o **CUDA Toolkit** e fazer a **renderização híbrida (Intel + NVIDIA)** funcionar direito no Ubuntu 24.04.
+Registrei este procedimento depois de ajustar um notebook com GPU híbrida, onde o objetivo era deixar o **driver proprietário NVIDIA**, o **CUDA Toolkit** e a renderização sob demanda via **PRIME** funcionando sem depender de tentativa e erro a cada reinstalação.
 
 O cenário principal foi um notebook **Lenovo IdeaPad com GPU NVIDIA GTX 1650 Mobile**, mas boa parte do fluxo também serve como referência para outros casos parecidos.
 
@@ -20,6 +20,7 @@ O cenário principal foi um notebook **Lenovo IdeaPad com GPU NVIDIA GTX 1650 Mo
 6. [Instalar CUDA Toolkit](#6)
 7. [Configuração gráfica híbrida (Intel + NVIDIA)](#7)
 8. [Solução de Problemas](#8)
+9. [Referências](#9)
 
 ---
 
@@ -353,10 +354,11 @@ prime-run vulkaninfo | grep "GPU id"
 ## 8. Solução de Problemas
 Se ocorrer algum erro durante ou após a instalação (tela preta, falha ao carregar o driver, `nvidia-smi` não funcionando), use o guia de troubleshooting abaixo.
 
-**Consulte o [Guia de Solução de Problemas NVIDIA + CUDA](guia_nvidia_cuda_troubleshooting_ubuntu2404.md) para um passo a passo detalhado.**
+Veja também: [Guia de Solução de Problemas NVIDIA + CUDA](guia_nvidia_cuda_troubleshooting_ubuntu2404.md)
 
 ---
 
+<a id="9"></a>
 ## Referências (fontes para consulta)
 
 ### NVIDIA (oficial)
@@ -374,4 +376,4 @@ Se ocorrer algum erro durante ou após a instalação (tela preta, falha ao carr
 ## Créditos
 
 Autor: Paulo Rocha  
-Repositório: https://github.com/PauloNRocha
+Repositório: https://github.com/PauloNRocha/tutoriais-infra-linux
