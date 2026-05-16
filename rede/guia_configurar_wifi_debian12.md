@@ -3,7 +3,7 @@
 *Criado em: 29 de setembro de 2025*  
 *Última atualização em: 18 de março de 2026*
 
-Wi-Fi no Debian costuma ser tranquilo até você cair em conflito entre `ifupdown`, `wpa_supplicant` e `NetworkManager`. Este guia registra um caminho previsível para configurar isso no **Debian 12 (Bookworm)**, cobrindo dois cenários comuns: **servidor** com `ifupdown` + `wpa_supplicant` e **desktop/notebook** com `nmcli`.
+Wi-Fi no Debian costuma funcionar bem quando só existe um componente cuidando da interface. O problema começa quando `ifupdown`, `wpa_supplicant` e `NetworkManager` tentam mandar no mesmo adaptador. Este guia deixa um caminho previsível para configurar Wi-Fi no **Debian 12 (Bookworm)**, cobrindo dois cenários comuns: **servidor** com `ifupdown` + `wpa_supplicant` e **desktop/notebook** com `nmcli`.
 
 A ideia aqui é colocar a interface no ar com segurança e sem disputa entre gerenciadores de rede. O guia não cobre modo AP/hotspot nem automações mais exóticas.
 
@@ -18,6 +18,7 @@ Veja também: [guia de configuração de rede no Debian 12/13 (Ethernet)](./guia
 4. [Método 2: `NetworkManager` com `nmcli`](#4)
 5. [Casos específicos e ajustes avançados](#5)
 6. [Checklist e solução de problemas](#6)
+7. [Referências](#7)
 
 ---
 
@@ -325,6 +326,7 @@ Se a placa for Intel ou Realtek e o firmware estiver faltando, instale o pacote 
 
 ---
 
+<a id="7"></a>
 ## Referências (fontes para consulta)
 
 ### Debian
@@ -344,4 +346,4 @@ Se a placa for Intel ou Realtek e o firmware estiver faltando, instale o pacote 
 ## Créditos
 
 Autor: Paulo Rocha  
-Repositório: https://github.com/PauloNRocha
+Repositório: https://github.com/PauloNRocha/tutoriais-infra-linux

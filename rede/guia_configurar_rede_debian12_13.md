@@ -3,7 +3,7 @@
 *Criado em: 29 de setembro de 2025*  
 *Última atualização em: 17 de março de 2026*
 
-Rede cabeada em Debian parece simples até o dia em que a interface não sobe, o `NetworkManager` entra no caminho ou o IP fixo fica diferente do esperado. Este guia junta um jeito estável e previsível de configurar isso no **Debian 12/13**, com foco principal em `ifupdown`, mas também trazendo alternativa com `NetworkManager` e alguns cenários mais avançados.
+Rede cabeada em Debian parece simples até o dia em que a interface não sobe, o `NetworkManager` assume o que não deveria ou um IP fixo fica diferente do esperado depois do reboot. A ideia aqui é deixar um caminho previsível para configurar Ethernet no **Debian 12/13**, usando `ifupdown` como padrão do guia e deixando alternativas claras para `NetworkManager` e cenários mais avançados.
 
 Observação prática:
 
@@ -27,6 +27,7 @@ Veja também: [guia de configuração de Wi-Fi no Debian 12](./guia_configurar_w
 9. [Checklist pós-reboot](#9)
 10. [Avançado (opcional)](#10)
 11. [Solução de Problemas](#11)
+12. [Referências](#12)
 
 ---
 
@@ -714,6 +715,7 @@ Aviso operacional:
 
 ---
 
+<a id="12"></a>
 ## Referências (fontes para consulta)
 
 ### Debian Wiki
@@ -733,4 +735,4 @@ Aviso operacional:
 ## Créditos
 
 Autor: Paulo Rocha  
-Repositório: https://github.com/PauloNRocha
+Repositório: https://github.com/PauloNRocha/tutoriais-infra-linux
