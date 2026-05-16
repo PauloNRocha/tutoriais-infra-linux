@@ -1,9 +1,9 @@
 # Ubuntu — recuperar após apagar `/lib/modules` (guia de emergência)
 
 *Criado em: 03 de dezembro de 2025*  
-*Última atualização em: 11 de março de 2026*
+*Última atualização em: 16 de maio de 2026*
 
-Apagar `/lib/modules` costuma transformar um sistema funcionando em um problema sério em poucos minutos. Este guia registra o que fazer quando um Ubuntu deixa de funcionar por causa dessa remoção, que atinge justamente os módulos e dependências do kernel.
+Apagar `/lib/modules` é uma daquelas coisas que parecem pequenas no terminal, mas derrubam o sistema inteiro logo depois: módulos do kernel somem, driver de vídeo para de carregar, rede pode desaparecer e o boot fica imprevisível. Este guia registra o caminho de emergência para recuperar um Ubuntu depois desse tipo de acidente.
 
 > [!WARNING]
 > **Guia de emergência**: isso aqui é para cenário de desastre. O ideal continua sendo ter backup, mas se o sistema já quebrou, este roteiro ajuda a recuperar o boot e reconstruir os módulos do kernel com mais previsibilidade.
@@ -23,6 +23,7 @@ Apagar `/lib/modules` costuma transformar um sistema funcionando em um problema 
 10. [Verificações finais](#10)
 11. [Dica final](#11)
 12. [Resumo dos comandos](#12)
+13. [Referências](#13)
 
 ---
 
@@ -183,6 +184,8 @@ sudo apt autoremove --purge -y
 
 Após restaurar o kernel, o driver da NVIDIA provavelmente precisará ser reinstalado.
 
+Veja também: [Guia de recuperação do driver NVIDIA no Ubuntu 24.04](../gpu/guia_recuperar_driver_nvidia_ubuntu2404.md)
+
 ### Via repositório Ubuntu:
 ```bash
 sudo apt install nvidia-driver-550 -y
@@ -210,16 +213,20 @@ sudo ./NVIDIA-Linux-x86_64-580.95.run
 A melhor cura é a prevenção. Após o sistema estar funcionando, faça um backup do diretório de módulos:
 
 ```bash
+sudo mkdir -p /backup-modules
 sudo cp -r /lib/modules /backup-modules/
 ```
 
-Se algo quebrar no futuro, você pode restaurá-lo rapidamente:
-```bash
-sudo rm -rf /lib/modules
-```
+Se algo quebrar no futuro e você precisar restaurar esse backup, primeiro preserve o diretório atual:
 
 ```bash
-sudo cp -r /backup-modules /lib/modules
+sudo mv /lib/modules /lib/modules.quebrado-$(date +%F-%H%M%S)
+```
+
+Depois restaure a cópia:
+
+```bash
+sudo cp -a /backup-modules/modules /lib/modules
 ```
 
 ---
@@ -279,6 +286,7 @@ sudo reboot
 
 ---
 
+<a id="13"></a>
 ## Referências (fontes para consulta)
 
 ### Manpages (referência)
@@ -292,4 +300,4 @@ sudo reboot
 ## Créditos
 
 Autor: Paulo Rocha  
-Repositório: https://github.com/PauloNRocha
+Repositório: https://github.com/PauloNRocha/tutoriais-infra-linux
