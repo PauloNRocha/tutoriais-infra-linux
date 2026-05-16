@@ -3,9 +3,11 @@
 *Criado em: 03 de dezembro de 2025*  
 *Última atualização em: 10 de março de 2026*
 
-Esse é o roteiro que eu costumo seguir quando preciso recuperar o driver da NVIDIA no Ubuntu 24.04 ou quando quero evitar quebrar tudo de novo depois de update de kernel, troca de driver ou tentativa de instalação via `.run`.
+Driver NVIDIA em notebook híbrido costuma quebrar nas horas mais inconvenientes: depois de atualização de kernel, troca de método de instalação ou tentativa de corrigir uma coisa e acabar mexendo em outra. Este é o roteiro que eu uso para recuperar o driver no Ubuntu 24.04 e, principalmente, para evitar repetir o mesmo problema depois.
 
 O foco principal é notebook híbrido com Intel + NVIDIA, mas boa parte do fluxo também serve para outros cenários. O guia cobre instalação via `.run` e via `apt`, diferença entre kernel **genérico vs OEM**, uso de PRIME/Optimus e correções para o erro **`unable to load the nvidia-drm kernel module`**.
+
+Veja também: [Guia de Produção: Troubleshooting NVIDIA + CUDA no Ubuntu 24.04](guia_nvidia_cuda_troubleshooting_ubuntu2404.md)
 
 ---
 
@@ -43,6 +45,7 @@ Se você já sabe qual é o sintoma, pode pular direto para a seção correspond
 10. [Checklist de validação final](#10)
 11. [Diagnóstico rápido](#11)
 12. [Conclusão](#12)
+13. [Referências](#13)
 
 ---
 
@@ -490,7 +493,7 @@ Se o `dkms status` mostrar a versão correta, use essa mesma versão abaixo:
 ```bash
 uname -r
 ls /lib/modules/$(uname -r)/updates/dkms/
-modinfo nvidia_drm | egrep 'filename|vermagic|depends' || echo "sem nvidia_drm para este kernel"
+modinfo nvidia_drm | grep -E 'filename|vermagic|depends' || echo "sem nvidia_drm para este kernel"
 ```
 
 2. Veja se o `initramfs` contém os módulos NVIDIA:
@@ -522,6 +525,7 @@ sudo dkms status
 
 ---
 
+<a id="13"></a>
 ## Referências (fontes para consulta)
 
 ### NVIDIA / Ubuntu (base)
@@ -541,4 +545,4 @@ sudo dkms status
 ## Créditos
 
 Autor: Paulo Rocha  
-Repositório: https://github.com/PauloNRocha
+Repositório: https://github.com/PauloNRocha/tutoriais-infra-linux
