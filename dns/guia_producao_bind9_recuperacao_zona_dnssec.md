@@ -146,33 +146,23 @@ Quando o arquivo principal quebra, esses arquivos podem ficar inconsistentes com
 
 ## 5. Procedimento de recuperação
 
-> Atenção: execute os passos abaixo em uma janela de manutenção. Você vai parar o BIND no servidor afetado e mexer em arquivos auxiliares da zona assinada.
-
 ### 5.1 Criar diretório de segurança para o incidente
 
 ```bash
-RECOVERY_DIR="/root/dns-recovery-exemplo-$(date +%F-%H%M%S)"
-echo "$RECOVERY_DIR"
-sudo install -d -m 0700 "$RECOVERY_DIR"
+sudo mkdir -p /root/dns-recovery-example
 ```
-
-Mantenha a mesma sessão de terminal aberta, porque os próximos comandos usam a variável `RECOVERY_DIR`.
 
 ### 5.2 Parar o BIND
 
-No guia principal, o serviço está como `named`:
-
 ```bash
-sudo systemctl stop named
+sudo systemctl stop bind9
 ```
-
-Se no seu Debian/Ubuntu o serviço estiver como `bind9`, troque `named` por `bind9`.
 
 ### 5.3 Guardar uma cópia do arquivo principal da zona
 
 ```bash
-sudo cp -a /var/lib/bind/primary-aut/exemplo.com.br/exemplo.com.br.hosts \
-"$RECOVERY_DIR"/
+sudo cp -a /var/lib/bind/master-aut/exemplo.com.br/exemplo.com.br.hosts \
+/root/dns-recovery-example/
 ```
 
 Isso é importante porque o arquivo principal foi justamente o ponto onde o erro entrou.
@@ -180,20 +170,10 @@ Isso é importante porque o arquivo principal foi justamente o ponto onde o erro
 ### 5.4 Mover os arquivos auxiliares da zona assinada
 
 ```bash
-ZONE_FILE="/var/lib/bind/primary-aut/exemplo.com.br/exemplo.com.br.hosts"
-
-for f in \
-  "$ZONE_FILE.jnl" \
-  "$ZONE_FILE.signed" \
-  "$ZONE_FILE.signed.jnl" \
-  "$ZONE_FILE.jbk"
-do
-  if [ -e "$f" ]; then
-    sudo mv -v "$f" "$RECOVERY_DIR"/
-  else
-    echo "não existe: $f"
-  fi
-done
+sudo mv -v /var/lib/bind/master-aut/exemplo.com.br/exemplo.com.br.hosts.jnl /root/dns-recovery-example/
+sudo mv -v /var/lib/bind/master-aut/exemplo.com.br/exemplo.com.br.hosts.signed /root/dns-recovery-example/
+sudo mv -v /var/lib/bind/master-aut/exemplo.com.br/exemplo.com.br.hosts.signed.jnl /root/dns-recovery-example/
+sudo mv -v /var/lib/bind/master-aut/exemplo.com.br/exemplo.com.br.hosts.jbk /root/dns-recovery-example/
 ```
 
 Motivo:
@@ -205,14 +185,14 @@ Motivo:
 ### 5.5 Corrigir o erro de sintaxe na zona
 
 ```bash
-sudo -u bind nano /var/lib/bind/primary-aut/exemplo.com.br/exemplo.com.br.hosts
+sudo nano /var/lib/bind/master-aut/exemplo.com.br/exemplo.com.br.hosts
 ```
 
 ### 5.6 Validar novamente a zona antes de subir o serviço
 
 ```bash
 sudo named-checkzone exemplo.com.br \
-/var/lib/bind/primary-aut/exemplo.com.br/exemplo.com.br.hosts
+/var/lib/bind/master-aut/exemplo.com.br/exemplo.com.br.hosts
 ```
 
 Saída esperada:
@@ -241,20 +221,13 @@ isso não costuma ser a causa direta do `SERVFAIL`, mas é sinal de configuraç�
 ### 5.8 Iniciar novamente o BIND
 
 ```bash
-sudo systemctl start named
-```
-
-Confira se o serviço subiu sem erro:
-
-```bash
-sudo systemctl status named --no-pager
-sudo journalctl -u named -n 100 --no-pager
+sudo systemctl start bind9
 ```
 
 ### 5.9 Confirmar se a zona voltou a responder no primário
 
 ```bash
-dig @ns1.exemplo.com.br exemplo.com.br SOA +noall +answer +comments
+dig exemplo.com.br SOA @ns1.exemplo.com.br
 ```
 
 Resposta esperada:
@@ -266,8 +239,8 @@ exemplo.com.br. 86400 IN SOA ns1.exemplo.com.br. hostmaster.exemplo.com.br.
 ### 5.10 Confirmar se o secundário recebeu a zona nova
 
 ```bash
-dig @ns1.exemplo.com.br exemplo.com.br SOA +noall +answer
-dig @ns2.exemplo.com.br exemplo.com.br SOA +noall +answer
+dig exemplo.com.br SOA @ns1.exemplo.com.br
+dig exemplo.com.br SOA @ns2.exemplo.com.br
 ```
 
 Aqui o objetivo é comparar:
