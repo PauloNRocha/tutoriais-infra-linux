@@ -1,7 +1,11 @@
-# Guia Completo do pwgen
+# Guia Prático: Geração de Senhas com pwgen no Linux
 
-*Criado em 22 de dezembro de 2025*
-*Geração de senhas seguras no Linux (passo a passo)*
+*Criado em: 22 de dezembro de 2025*  
+*Última atualização em: 16 de maio de 2026*
+
+Senha temporária, usuário novo, acesso de emergência e credencial de laboratório são situações em que muita gente acaba improvisando. O `pwgen` ajuda justamente nisso: gerar senhas rapidamente no terminal, com opções para deixar o resultado mais fácil de digitar ou mais forte para uso em produção.
+
+Este guia mostra o uso básico do `pwgen`, quando usar o modo seguro, quais opções importam de verdade e quais cuidados tomar para não transformar uma senha gerada corretamente em credencial exposta por descuido.
 
 ---
 
@@ -17,6 +21,7 @@
 9. [Quando NÃO usar o pwgen](#9)
 10. [Comparação com outras ferramentas](#10)
 11. [Boas práticas finais](#11)
+12. [Referências](#12)
 
 ---
 
@@ -197,7 +202,7 @@ O `pwgen` é excelente para o que faz, mas **não é a ferramenta certa** para:
 ---
 
 <a id="10"></a>
-## 10. 🆚 Comparação com outras ferramentas
+## 10. Comparação com outras ferramentas
 
 | Ferramenta   | Uso Principal                                   |
 | :----------- | :---------------------------------------------- |
@@ -219,6 +224,7 @@ O `pwgen` é excelente para o que faz, mas **não é a ferramenta certa** para:
 
 ---
 
+<a id="12"></a>
 ## Referências (fontes para consulta)
 
 ### Manpages / Debian
@@ -228,5 +234,7 @@ O `pwgen` é excelente para o que faz, mas **não é a ferramenta certa** para:
 
 ---
 
+## Créditos
+
 Autor: Paulo Rocha  
-Repositório: https://github.com/PauloNRocha
+Repositório: https://github.com/PauloNRocha/tutoriais-infra-linux

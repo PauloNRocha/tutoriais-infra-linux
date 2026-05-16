@@ -3,7 +3,7 @@
 *Criado em: 03 de janeiro de 2026*  
 *Última atualização em: 25 de março de 2026*
 
-Krill é o tipo de serviço que parece pequeno no começo, mas vira peça crítica muito rápido quando entra em produção. Este guia registra a implantação que fui consolidando no **Debian 13 (Trixie)**, com acesso administrativo seguro, publicação RPKI funcional e proteção básica do host com `nftables`.
+Krill parece um serviço pequeno quando a gente olha só para a interface, mas em produção ele passa a fazer parte da saúde dos anúncios BGP. Se ROA, Parent, Repository ou publicação quebrarem, o impacto pode aparecer fora do servidor, direto na validação das rotas. Este guia registra a implantação que fui consolidando no **Debian 13 (Trixie)**, com acesso administrativo seguro, publicação RPKI funcional e proteção básica do host com `nftables`.
 
 A ideia aqui é deixar a CA RPKI operando de forma previsível, com acesso por **SSH tunnel** ou por **HTTPS atrás de Nginx**, e com base suficiente para configurar Parent, Repository, ROAs e ASPAs. Os exemplos e observações deste guia seguem a linha do **Krill 0.16.0**.
 
@@ -15,8 +15,8 @@ A ideia aqui é deixar a CA RPKI operando de forma previsível, com acesso por *
 3. [Instalação do Krill (APT NLnet Labs)](#3)
 4. [Configuração do Krill (`/etc/krill.conf`)](#4)
 5. [Configurando o Acesso à Interface do Krill](#5)
-- [Opção A: SSH Tunnel (Mais Seguro)](#5.1)
-- [Opção B: Nginx + TLS (Produção)](#5.2)
+   - [Opção A: SSH Tunnel (Mais Seguro)](#5.1)
+   - [Opção B: Nginx + TLS (Produção)](#5.2)
 6. [Firewall Obrigatório: nftables (Modelo Pronto)](#6)
 7. [Configurar CA + Parent (Exemplo: Registro.br)](#7)
 8. [Configurar Repository/Publicação (Repository)](#8)
@@ -690,7 +690,7 @@ Esta seção é para casos específicos onde a publicação remota não está di
 
 **Conceitos importantes:**
 -   `/rfc8181`: É o endpoint do **Publication Server** do Krill, onde outras CAs e publicadores se conectam para trocar informações.
--   RRDP (RRDPH): Um protocolo HTTP para distribuição de dados RPKI (arquivos `notification.xml`, snapshots, deltas).
+-   RRDP: protocolo HTTP para distribuição de dados RPKI (arquivos `notification.xml`, snapshots, deltas).
 -   rsync: Um protocolo alternativo para distribuição de dados RPKI, mais antigo, mas ainda utilizado.
 
 **Boas Práticas:**
@@ -982,4 +982,4 @@ Este é um resumo rápido de práticas que **DEVEM SER EVITADAS** para garantir 
 ## Créditos
 
 Autor: Paulo Rocha  
-Repositório: https://github.com/PauloNRocha
+Repositório: https://github.com/PauloNRocha/tutoriais-infra-linux

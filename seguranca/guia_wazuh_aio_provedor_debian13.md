@@ -3,9 +3,9 @@
 *Criado em: 18 de dezembro de 2025*  
 *Última atualização em: 01 de abril de 2026*
 
-Wazuh em arquitetura All-in-One pode resolver bem quando a operação ainda está concentrada, mas ele precisa nascer com alguma folga e com o mínimo de organização para não virar dor de cabeça rápido. Este guia registra esse desenho no **Debian 13**, pensando em provedor pequeno ou médio, com múltiplos servidores Linux e integração com **MikroTik** via syslog.
+Wazuh em arquitetura All-in-One pode resolver bem quando a operação ainda está concentrada, mas ele precisa nascer com alguma folga e com o mínimo de organização para não virar dor de cabeça rápido. Este guia registra uma instalação do Wazuh no **Debian 13**, pensando em provedor pequeno ou médio, com múltiplos servidores Linux e integração com **MikroTik** via syslog.
 
-O foco aqui é instalação, pós-instalação essencial, agentes, retenção, backup e um mínimo de endurecimento com `nftables`. Os exemplos abaixo seguem a linha do **Wazuh 4.14.4**.
+O foco aqui é deixar uma base funcional para produção: instalação, pós-instalação essencial, agentes, retenção, backup e um mínimo de endurecimento com `nftables`. Não é um desenho de cluster distribuído nem de SIEM para grande volume; é uma base AIO organizada para começar direito e crescer com menos improviso. Os exemplos abaixo seguem a linha do **Wazuh 4.14.4**.
 
 ---
 
@@ -16,15 +16,15 @@ O foco aqui é instalação, pós-instalação essencial, agentes, retenção, b
 4. [Instalação Wazuh 4.14.4 (All-in-One)](#4)
 5. [Pós-instalação essencial](#5)
 6. [Configurando Agentes](#6)
-7. [Agente Debian 12/13](#6.1)
-8. [Agente AlmaLinux + cPanel](#6.2)
-9. [Integração MikroTik (Syslog)](#7)
-10. [Retenção de logs (90 dias – ISM/ILM)](#8)
-11. [Backup diário simples](#9)
-12. [Saúde e troubleshooting](#10)
-13. [Checklist final](#11)
-14. [Notas de produção](#12)
-15. [Referências](#13)
+   - [Agente Debian 12/13](#6.1)
+   - [Agente AlmaLinux + cPanel](#6.2)
+7. [Integração MikroTik (Syslog)](#7)
+8. [Retenção de logs (90 dias – ISM/ILM)](#8)
+9. [Backup diário simples](#9)
+10. [Saúde e troubleshooting](#10)
+11. [Checklist final](#11)
+12. [Notas de produção](#12)
+13. [Referências](#13)
 
 ---
 
@@ -467,7 +467,7 @@ Se você quiser criar regras locais específicas para `firewall`, `account` ou o
 ---
 
 <a id="8"></a>
-## 8. ⏳ Retenção de logs (90 dias – ISM/ILM)
+## 8. Retenção de logs (90 dias – ISM/ILM)
 
 ```bash
 curl -k -u admin:<SENHA_INDEXER_ADMIN> -XPUT "https://localhost:9200/_plugins/_ism/policies/wazuh-90d" \
@@ -599,7 +599,7 @@ df -h /var/lib/wazuh-indexer
 ---
 
 <a id="13"></a>
-## 13) Referências (fontes para consulta)
+## 13. Referências (fontes para consulta)
 
 ### Wazuh (oficial)
 
@@ -619,4 +619,4 @@ df -h /var/lib/wazuh-indexer
 ## Créditos
 
 Autor: Paulo Rocha  
-Repositório: https://github.com/PauloNRocha
+Repositório: https://github.com/PauloNRocha/tutoriais-infra-linux
