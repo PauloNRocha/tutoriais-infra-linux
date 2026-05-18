@@ -1,220 +1,475 @@
-# Linux: formatar discos e partições (guia seguro)
+# Guia Prático: Formatar discos e partições no Linux com segurança
 
-*Criado em 04 de dezembro de 2025 e atualizado em 08 de dezembro de 2025*
+*Criado em: 04 de dezembro de 2025*  
+*Última atualização em: 18 de maio de 2026*
 
-Formatar um disco no Linux é uma tarefa poderosa, mas que exige **muita atenção**. Um erro pode apagar dados importantes para sempre. Este guia detalha um fluxo seguro, passo a passo, para identificar, particionar e formatar um disco.
-
----
+Formatar disco no Linux não é difícil, mas é uma daquelas tarefas em que pressa custa caro. O objetivo aqui é seguir um fluxo seguro: identificar o disco certo, criar uma partição, formatar, montar e, se fizer sentido, deixar a montagem fixa no `/etc/fstab`.
 
 > [!WARNING]
-> **AVISO IMPORTANTE: PERDA DE DADOS**
->  
-> Formatar um disco ou partição **apaga permanentemente** todos os dados contidos nele. Verifique **três vezes** o nome do dispositivo (ex.: `/dev/sdX`) antes de executar qualquer comando.
+> Formatar uma partição apaga os dados dela. Criar uma nova tabela de partições apaga a estrutura do disco inteiro. Antes de rodar `fdisk`, `mkfs` ou qualquer comando parecido, confira o dispositivo pelo tamanho, modelo, serial e ponto de montagem.
+
+Nos comandos abaixo, `/dev/sdX` representa o disco de exemplo e `/dev/sdX1` representa a partição de exemplo. Substitua pelo dispositivo real do seu ambiente.
+
+Os exemplos usam `sudo`. Se você estiver logado diretamente como `root`, execute os comandos sem `sudo`.
+
+Em NVMe, o nome costuma ser diferente:
+
+- disco: `/dev/nvme0n1`
+- partição: `/dev/nvme0n1p1`
+
+Na prática, a ordem dos discos pode mudar depois de um reboot. Em uma VM Debian 13, por exemplo, o disco secundário que aparecia como `/dev/sdb` passou a aparecer como `/dev/sda` depois de reiniciar. A montagem continuou correta porque o `/etc/fstab` usava `UUID`, não o nome `/dev/sdX`.
 
 ---
 
 ## Índice rápido
-1. [Passo 1: Identificar o Disco Corretamente](#1)
-2. [Passo 2: (Opcional) Criar uma Nova Tabela de Partições](#2)
-3. [Passo 3: Criar uma Partição](#3)
-4. [Passo 4: Formatar a Nova Partição](#4)
-5. [Passo 5: Montar a Partição (Permanente via fstab)](#5)
-6. [Solução de Problemas: Erros Comuns no fstab](#6)
+
+1. [Instalar ferramentas necessárias](#1)
+2. [Identificar o disco correto](#2)
+3. [Desmontar partições em uso](#3)
+4. [Criar tabela GPT e uma partição](#4)
+5. [Formatar a partição](#5)
+6. [Montar manualmente para testar](#6)
+7. [Montagem permanente via fstab](#7)
+8. [Problemas comuns no fstab](#8)
+9. [Referências](#referencias)
 
 ---
 
 <a id="1"></a>
-## 1. Passo 1: Identificar o Disco Corretamente
+## 1. Instalar ferramentas necessárias
 
-Este é o passo mais crítico. Conecte o disco (HD externo, SSD, pendrive) e vamos usar dois comandos para ter certeza absoluta de qual dispositivo vamos formatar.
+No Debian/Ubuntu:
 
 ```bash
-sudo fdisk -l
+sudo apt update
+sudo apt install -y util-linux fdisk parted e2fsprogs
 ```
-Este comando lista todos os discos e suas tabelas de partição. Procure pelo seu disco baseado no **tamanho** (`Disk model` e `Disk size`).
 
-Depois, use `lsblk` para uma visão mais clara:
-```bash
-lsblk
-```
-A saída será algo como:
-```
-NAME   MAJ:MIN RM   SIZE RO TYPE MOUNTPOINT
-sda      8:0    0 238.5G  0 disk 
-├─sda1   8:1    0   512M  0 part /boot/efi
-└─sda2   8:2    0   238G  0 part /
-sdb      8:16   0 931.5G  0 disk 
-└─sdb1   8:17   0 931.5G  0 part /media/usuario/Backup
-```
-No exemplo acima, `sda` é o disco do sistema (note os `MOUNTPOINT` `/` e `/boot/efi`). `sdb` é um disco externo de `931.5G` montado em `/media/usuario/Backup`. **Nunca execute esses comandos em um disco que tenha partições do sistema montadas.**
+Na prática, `util-linux` fornece ferramentas como `lsblk`, `blkid`, `findmnt` e `mount`; `fdisk` fornece o particionador; `parted` fornece o `partprobe`; e `e2fsprogs` fornece o `mkfs.ext4`.
 
-Uma vez que você identificou o dispositivo (ex: `/dev/sdb`), desmonte qualquer partição que esteja em uso:
-```bash
-# Use o nome da partição, ex: /dev/sdb1
-sudo umount /dev/sdb1
-```
+Se for formatar em exFAT ou NTFS, instale os pacotes específicos na etapa de formatação.
 
 ---
 
 <a id="2"></a>
-## 2. Passo 2: (Opcional) Criar uma Nova Tabela de Partições
+## 2. Identificar o disco correto
 
-Se o disco é novo ou se você quer apagar absolutamente tudo (incluindo a estrutura de partições antiga), você deve criar uma nova tabela de partições. Para discos modernos (> 2TB) ou para compatibilidade com UEFI, o padrão é **GPT**.
+Este é o passo mais importante do guia.
 
-> **Atenção:** O próximo comando apaga a estrutura do disco `/dev/sdb`. Tenha certeza de que é o disco certo!
+Liste os discos com colunas úteis:
 
 ```bash
-# Substitua /dev/sdb pelo seu disco
-sudo parted /dev/sdb mklabel gpt
+lsblk -o NAME,SIZE,TYPE,FSTYPE,LABEL,UUID,MOUNTPOINTS,MODEL,SERIAL
 ```
-Este comando cria uma nova tabela de partições GPT vazia no disco.
+
+Exemplo:
+
+```text
+NAME   SIZE TYPE FSTYPE LABEL UUID                                 MOUNTPOINTS MODEL        SERIAL
+sda  238.5G disk                                                   SSD-SISTEMA 123ABC
+├─sda1 512M part vfat         1111-2222                            /boot/efi
+└─sda2 238G part ext4         aaaa-bbbb-cccc-dddd                  /
+sdb  931.5G disk                                                   HD-EXTERNO  987XYZ
+└─sdb1 931G part ext4  Backup 3333-4444-5555-6666                  /media/paulo/Backup
+```
+
+No exemplo acima:
+
+- `/dev/sda` é o disco do sistema, porque tem `/` e `/boot/efi`;
+- `/dev/sdb` é um disco externo de 931,5 GB.
+
+Confira também com `fdisk`:
+
+```bash
+sudo fdisk -l /dev/sdX
+```
+
+Antes de continuar, confirme:
+
+- o tamanho do disco;
+- o modelo;
+- o serial, quando disponível;
+- se não há partição do sistema montada nele;
+- se você realmente quer apagar esse disco ou partição.
+
+> [!CAUTION]
+> Não continue se o disco tiver `/`, `/boot`, `/boot/efi`, `/home` ou qualquer montagem importante que você não pretende apagar.
 
 ---
 
 <a id="3"></a>
-## 3. Passo 3: Criar uma Partição
+## 3. Desmontar partições em uso
 
-Com o disco "limpo", vamos criar uma partição para ocupar 100% do espaço. Usaremos o `fdisk`, uma ferramenta de linha de comando poderosa.
+Se a partição estiver montada, desmonte antes de alterar tabela de partição ou formatar.
+
+Exemplo:
 
 ```bash
-# Substitua /dev/sdb pelo seu disco
-sudo fdisk /dev/sdb
+sudo umount /dev/sdX1
 ```
-O `fdisk` vai abrir um prompt interativo. Siga esta sequência de comandos:
 
-1.  Digite `g` para garantir que está criando uma tabela de partição GPT vazia (se não fez o passo 2).
-2.  Digite `n` para criar uma nova partição.
-3.  Pressione `Enter` para aceitar o número padrão da partição (1).
-4.  Pressione `Enter` para aceitar o primeiro setor padrão.
-5.  Pressione `Enter` novamente para aceitar o último setor padrão (usando o disco todo).
-6.  O `fdisk` pode perguntar se deseja remover uma assinatura existente. Digite `Y` se perguntar.
-7.  Finalmente, digite `w` para escrever as alterações no disco e sair.
+Se alguma partição desse disco estiver sendo usada como swap, desative antes:
 
-Ao final, você terá uma nova partição, como `/dev/sdb1`.
+```bash
+sudo swapoff /dev/sdX2
+```
+
+Confira se ainda existe montagem ativa:
+
+```bash
+findmnt /dev/sdX1
+```
+
+Se `findmnt` não retornar nada para a partição, ela não está montada.
 
 ---
 
 <a id="4"></a>
-## 4. Passo 4: Formatar a Nova Partição
+## 4. Criar tabela GPT e uma partição
 
-Agora que temos a partição `/dev/sdb1`, podemos formatá-la com o sistema de arquivos que quisermos.
+Esta etapa apaga a estrutura de partições anterior do disco.
 
-### Para uso exclusivo no Linux (Recomendado: **ext4**)
+Abra o disco inteiro no `fdisk`, não a partição:
+
 ```bash
-# Substitua /dev/sdb1 pela sua partição
-sudo mkfs.ext4 /dev/sdb1
+sudo fdisk /dev/sdX
 ```
 
-### Para compatibilidade com Windows e outros (Recomendado: **exFAT**)
-O exFAT não tem as limitações de 4GB por arquivo do antigo FAT32.
-```bash
-# Primeiro, instale a ferramenta se não tiver
-sudo apt update && sudo apt install exfatprogs -y
+Dentro do `fdisk`, siga esta sequência:
 
-# Formate a partição
-sudo mkfs.exfat /dev/sdb1
+1. Digite `g` para criar uma nova tabela GPT.
+2. Digite `n` para criar uma nova partição.
+3. Pressione `Enter` para aceitar o número padrão da partição.
+4. Pressione `Enter` para aceitar o primeiro setor padrão.
+5. Pressione `Enter` para aceitar o último setor padrão e usar o disco todo.
+6. Se o `fdisk` perguntar se deve remover uma assinatura antiga, responda `Y`.
+7. Digite `p` para revisar a tabela antes de gravar.
+8. Digite `w` para gravar as alterações e sair.
+
+Depois, peça ao kernel para reler a tabela de partições:
+
+```bash
+sudo partprobe /dev/sdX
 ```
 
-### Para compatibilidade com Windows (Formato nativo: **NTFS**)
-```bash
-# Primeiro, instale a ferramenta se não tiver
-sudo apt update && sudo apt install ntfs-3g -y
+Confira:
 
-# Formate a partição
-sudo mkfs.ntfs -f /dev/sdb1
-```
-A opção `-f` realiza uma formatação rápida.
-
-### Verificação Final
-Para ter certeza de que tudo funcionou, liste os dispositivos novamente:
 ```bash
-lsblk -f
+lsblk -o NAME,SIZE,TYPE,FSTYPE,LABEL,UUID,MOUNTPOINTS,MODEL,SERIAL /dev/sdX
 ```
-Você deverá ver a sua nova partição com o `FSTYPE` (sistema de arquivos) que você escolheu. Agora o disco está pronto para ser montado.
+
+Ao final, você deve ter uma partição nova, como `/dev/sdX1`.
 
 ---
 
 <a id="5"></a>
-## 5. Passo 5: Montar a Partição (Permanente via fstab)
+## 5. Formatar a partição
 
-Para que o disco seja montado automaticamente a cada inicialização, precisamos adicioná-lo ao arquivo `/etc/fstab`. É altamente recomendado usar o `UUID` da partição, pois ele é único e não muda se a ordem dos discos mudar (diferente de `/dev/sdb1`).
+Formate a partição, não o disco inteiro.
 
-1.  **Descobrir o UUID da nova partição:**
-    ```bash
-    sudo blkid
-    ```
-    Anote o `UUID` da sua partição (ex: `1234abcd-5678-efab-cdef-1234567890ab`).
+Correto:
 
-2.  **Crie um ponto de montagem:**
-    ```bash
-    sudo mkdir /mnt/meudisco
-    ```
+```bash
+sudo mkfs.ext4 -L dados /dev/sdX1
+```
 
-3.  **Edite o `/etc/fstab`:**
-    ```bash
-    sudo nano /etc/fstab
-    ```
-    Adicione a seguinte linha no final do arquivo, substituindo o `UUID` e o tipo de sistema de arquivos conforme o seu caso:
-    ```
-    UUID=1234abcd-5678-efab-cdef-1234567890ab /mnt/meudisco ext4 defaults 0 2
-    ```
-    - `UUID=...`: O identificador único da sua partição.
-    - `/mnt/meudisco`: O ponto onde a partição será montada.
-    - `ext4`: O sistema de arquivos (pode ser `exfat`, `ntfs`, etc.).
-    - `defaults`: Opções de montagem padrão (inclui `rw`, `suid`, `dev`, `exec`, `auto`, `nouser`, `async`).
-    - `0 2`: `0` para não fazer dump, `2` para verificar o sistema de arquivos na inicialização (a raiz usa `1`).
+Errado:
 
-4.  **Teste o `fstab`:**
-    ```bash
-    sudo mount -a
-    ```
-    Se não houver erros, a partição foi montada com sucesso. Você pode verificar com `df -h`.
+```bash
+sudo mkfs.ext4 /dev/sdX
+```
+
+### 5.1 ext4 para uso Linux
+
+Para disco usado apenas em Linux, `ext4` costuma ser a escolha simples e estável.
+
+```bash
+sudo mkfs.ext4 -L dados /dev/sdX1
+```
+
+### 5.2 exFAT para compatibilidade com Windows, macOS e Linux
+
+exFAT é uma boa opção para pendrive, HD externo e SSD externo que precisa circular entre sistemas diferentes.
+
+Instale a ferramenta:
+
+```bash
+sudo apt update
+sudo apt install -y exfatprogs
+```
+
+Formate:
+
+```bash
+sudo mkfs.exfat -L DADOS /dev/sdX1
+```
+
+### 5.3 NTFS para uso específico com Windows
+
+Use NTFS quando o disco precisa ser usado principalmente em Windows.
+
+Instale a ferramenta:
+
+```bash
+sudo apt update
+sudo apt install -y ntfs-3g
+```
+
+Formate:
+
+```bash
+sudo mkfs.ntfs -f -L DADOS /dev/sdX1
+```
+
+A opção `-f` faz formatação rápida.
+
+Ao montar um volume NTFS no Linux com `ntfs-3g`, comandos como `findmnt` ou `df -T` podem mostrar o tipo como `fuseblk`. Isso é normal.
+
+### 5.4 Verificar resultado
+
+Confira o sistema de arquivos criado:
+
+```bash
+lsblk -f /dev/sdX
+sudo blkid /dev/sdX1
+```
 
 ---
 
 <a id="6"></a>
-## 6. Solução de Problemas: Erros Comuns no fstab
+## 6. Montar manualmente para testar
 
-Um erro no `/etc/fstab` pode impedir o sistema de inicializar. Se isso acontecer, siga estes passos:
+Crie um ponto de montagem:
 
-1.  **Modo de Recuperação (Rescue Mode):**
-    Quando o sistema travar na inicialização, reinicie e, na tela do GRUB, escolha "Advanced options for Ubuntu" (ou similar) e selecione "Recovery mode" (Modo de recuperação).
+```bash
+sudo mkdir -p /mnt/meudisco
+```
 
-2.  **Shell de Root:**
-    No menu de recuperação, escolha a opção "root - Drop to root shell prompt".
+Monte a partição:
 
-3.  **Remontar a Raiz (se necessário):**
-    O sistema de arquivos raiz pode estar montado como somente leitura. Remonte-o como leitura/escrita:
-    ```bash
-    mount -o remount,rw /
-    ```
+```bash
+sudo mount /dev/sdX1 /mnt/meudisco
+```
 
-4.  **Edite o `fstab`:**
-    ```bash
-    nano /etc/fstab
-    ```
-    Comente a linha que você adicionou (coloque um `#` no início) ou corrija o erro.
+Confira:
 
-5.  **Salve, Saia e Reinicie:**
-    Salve o arquivo (`Ctrl+O`, `Enter`), saia (`Ctrl+X`) e reinicie o sistema.
-    ```bash
-    reboot
-    ```
-    Após reiniciar, você poderá corrigir o `fstab` com calma.
+```bash
+findmnt /mnt/meudisco
+df -hT /mnt/meudisco
+```
+
+Se for um disco `ext4` novo para uso do usuário atual, ajuste o dono da raiz da partição:
+
+```bash
+sudo chown "$USER":"$USER" /mnt/meudisco
+```
+
+Se montou corretamente, teste criar um arquivo simples:
+
+```bash
+touch /mnt/meudisco/teste-gravacao
+ls -l /mnt/meudisco/teste-gravacao
+```
+
+Depois, se quiser desmontar:
+
+```bash
+sudo umount /mnt/meudisco
+```
 
 ---
 
+<a id="7"></a>
+## 7. Montagem permanente via fstab
+
+Para montar automaticamente no boot, use `/etc/fstab`.
+
+Antes de editar, faça backup:
+
+```bash
+sudo cp -a /etc/fstab /etc/fstab.bak.$(date +%F_%H%M%S)
+```
+
+Descubra o UUID da partição:
+
+```bash
+sudo blkid /dev/sdX1
+```
+
+Crie o ponto de montagem:
+
+```bash
+sudo mkdir -p /mnt/meudisco
+```
+
+Edite o arquivo e adicione a linha correspondente ao sistema de arquivos escolhido:
+
+```bash
+sudo nano /etc/fstab
+```
+
+### 7.1 Exemplo para ext4
+
+Para disco secundário, externo ou não crítico para o boot, eu prefiro usar `nofail` e timeout curto. Assim, se o disco não estiver presente, o sistema não fica preso no boot.
+
+```fstab
+UUID=1234abcd-5678-efab-cdef-1234567890ab /mnt/meudisco ext4 defaults,nofail,x-systemd.device-timeout=10s 0 2
+```
+
+Campos:
+
+- `UUID=...`: identificador único da partição;
+- `/mnt/meudisco`: ponto de montagem;
+- `ext4`: sistema de arquivos;
+- `defaults,nofail,x-systemd.device-timeout=10s`: opções de montagem;
+- `0`: não usar `dump`;
+- `2`: permitir checagem do sistema de arquivos depois da raiz.
+
+Se o disco for crítico para um serviço e você quer que falha de montagem pare o boot, remova `nofail` de propósito e documente isso no ambiente.
+
+### 7.2 Exemplo para exFAT
+
+```fstab
+UUID=1234-ABCD /mnt/meudisco exfat defaults,nofail,x-systemd.device-timeout=10s,uid=1000,gid=1000,umask=022 0 0
+```
+
+Em exFAT e NTFS, ajuste `uid` e `gid` conforme o usuário que deve gravar no disco.
+
+Para descobrir seu UID e GID:
+
+```bash
+id
+```
+
+### 7.3 Exemplo para NTFS
+
+```fstab
+UUID=1234567890ABCDEF /mnt/meudisco ntfs defaults,nofail,x-systemd.device-timeout=10s,uid=1000,gid=1000,umask=022 0 0
+```
+
+### 7.4 Testar antes de reiniciar
+
+Em Debian com `systemd`, o próprio `/etc/fstab` avisa que as units de montagem são geradas a partir desse arquivo. Depois de salvar o `fstab`, recarregue o `systemd` antes de testar:
+
+```bash
+sudo systemctl daemon-reload
+```
+
+Valide o `/etc/fstab`:
+
+```bash
+sudo findmnt --verify --verbose
+```
+
+O comando valida o arquivo inteiro. Em alguns sistemas podem aparecer avisos não relacionados ao disco novo, por exemplo uma entrada antiga de CD-ROM/ISO. O ponto principal é não haver erro de parse e confirmar que a linha do novo ponto de montagem aparece traduzindo o `UUID` para a partição correta.
+
+Monte tudo que estiver configurado para montagem automática:
+
+```bash
+sudo mount -a
+```
+
+Confira:
+
+```bash
+findmnt /mnt/meudisco
+df -hT /mnt/meudisco
+```
+
+Não reinicie antes de testar o `fstab`. Um erro nesse arquivo pode atrapalhar o boot.
+
+Depois que o teste manual passar, você pode reiniciar e confirmar se a montagem voltou sozinha:
+
+```bash
+sudo reboot
+```
+
+Após o boot:
+
+```bash
+findmnt /mnt/meudisco
+df -hT /mnt/meudisco
+lsblk -f
+```
+
+Exemplo de saída em Debian 13:
+
+```text
+TARGET        SOURCE    FSTYPE OPTIONS
+/mnt/meudisco /dev/sda1 ext4   rw,relatime
+```
+
+Mesmo que o `SOURCE` apareça como `/dev/sda1`, `/dev/sdb1` ou outro nome depois do reboot, o importante é o ponto de montagem estar correto. O `/etc/fstab` com `UUID` protege justamente contra essa troca de ordem dos discos.
+
+---
+
+<a id="8"></a>
+## 8. Problemas comuns no fstab
+
+### 8.1 O sistema não monta depois do boot
+
+Confira se o UUID mudou:
+
+```bash
+sudo blkid /dev/sdX1
+grep meudisco /etc/fstab
+```
+
+Se você formatou de novo, o UUID provavelmente mudou. Atualize o `/etc/fstab`.
+
+### 8.2 O boot demora esperando disco externo
+
+Para disco externo, secundário ou que pode não estar conectado, use:
+
+```fstab
+nofail,x-systemd.device-timeout=10s
+```
+
+Sem isso, o sistema pode esperar o dispositivo por mais tempo durante o boot.
+
+### 8.3 Erro no fstab impediu o boot normal
+
+Entre pelo modo de recuperação do GRUB, escolha um shell de root e remonte a raiz como leitura/escrita:
+
+```bash
+mount -o remount,rw /
+```
+
+Edite o arquivo:
+
+```bash
+nano /etc/fstab
+```
+
+Comente a linha problemática colocando `#` no início, salve e reinicie:
+
+```bash
+reboot
+```
+
+Depois que o sistema voltar, corrija com calma usando o backup criado antes da alteração.
+
+---
+
+<a id="referencias"></a>
 ## Referências (fontes para consulta)
 
-### Manpages (Debian)
+### Manpages Debian
 
-- `lsblk(8)`: https://manpages.debian.org/bookworm/util-linux/lsblk.8.en.html
-- `fdisk(8)`: https://manpages.debian.org/bookworm/util-linux/fdisk.8.en.html
-- `parted(8)`: https://manpages.debian.org/bookworm/parted/parted.8.en.html
-- `mkfs.ext4(8)`: https://manpages.debian.org/bookworm/e2fsprogs/mkfs.ext4.8.en.html
-- `fstab(5)`: https://manpages.debian.org/bookworm/mount/fstab.5.en.html
+- `lsblk(8)` Debian Trixie: https://manpages.debian.org/trixie/util-linux/lsblk.8.en.html
+- `fdisk(8)` Debian Trixie: https://manpages.debian.org/trixie/fdisk/fdisk.8.en.html
+- `parted(8)` Debian Trixie: https://manpages.debian.org/trixie/parted/parted.8.en.html
+- `mkfs.ext4(8)` Debian Trixie: https://manpages.debian.org/trixie/e2fsprogs/mkfs.ext4.8.en.html
+- `mkfs.exfat(8)` Debian Trixie: https://manpages.debian.org/trixie/exfatprogs/mkfs.exfat.8.en.html
+- `mkfs.ntfs(8)` Debian Trixie: https://manpages.debian.org/trixie/ntfs-3g/mkfs.ntfs.8.en.html
+- `blkid(8)` Debian Trixie: https://manpages.debian.org/trixie/util-linux/blkid.8.en.html
+- `findmnt(8)` Debian Trixie: https://manpages.debian.org/trixie/util-linux/findmnt.8.en.html
+- `fstab(5)` Debian Trixie: https://manpages.debian.org/trixie/mount/fstab.5.en.html
+- `systemd.mount(5)` Debian Trixie: https://manpages.debian.org/trixie/systemd/systemd.mount.5.en.html
 
 ---
 
+## Créditos
+
 Autor: Paulo Rocha  
-Repositório: https://github.com/PauloNRocha
+Repositório: https://github.com/PauloNRocha/tutoriais-infra-linux
