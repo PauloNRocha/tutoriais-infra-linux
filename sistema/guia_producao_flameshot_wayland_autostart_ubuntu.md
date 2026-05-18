@@ -3,9 +3,9 @@
 *Criado em: 09 de março de 2026*  
 *Última atualização em: 18 de maio de 2026*
 
-Esse guia registra a forma que funcionou no meu notebook para fazer o Flameshot iniciar junto com a sessão no Ubuntu usando GNOME Wayland e também assumir a tecla `Print`. O foco aqui é resolver esse cenário específico: Flameshot instalado pelo APT, sessão Wayland e atalho de captura do GNOME atrapalhando o uso da tecla `Print`.
+Esse guia registra a forma que funcionou no meu notebook para fazer o Flameshot iniciar junto com a sessão no Ubuntu e assumir a tecla `Print`. Em X11 o comportamento foi mais direto. No GNOME Wayland, precisei ajustar o atalho por causa do portal de captura de tela do GNOME.
 
-Não trato aqui de KDE, Xfce, X11, Flatpak, Snap ou outras combinações. Podem funcionar, mas não foi esse o ambiente que motivou o guia.
+O foco aqui é Ubuntu com GNOME, Flameshot instalado pelo APT e uso da tecla `Print`. Não trato de KDE, Xfce, Flatpak, Snap ou outras combinações.
 
 ---
 
@@ -27,13 +27,14 @@ Não trato aqui de KDE, Xfce, X11, Flatpak, Snap ou outras combinações. Podem 
 <a id="1"></a>
 ## 1. Cenário
 
-Aqui o Flameshot não funcionava direito quando eu tentava usar de forma “normal” pelo atalho ou pela inicialização automática comum.
+Aqui o Flameshot funcionava em X11, mas passou a falhar em alguns pontos quando a sessão foi alterada para Wayland. O problema principal não era a instalação do Flameshot, e sim a forma como o GNOME Wayland lida com a permissão de captura de tela.
 
 O comportamento era basicamente este:
 
 - abrindo pelo terminal, funcionava;
 - usando atalho direto, falhava ou não abria como esperado;
-- colocando apenas para iniciar com a sessão, o comportamento ficava inconsistente.
+- colocando apenas para iniciar com a sessão, o comportamento ficava inconsistente;
+- pelo ícone da bandeja, no Wayland, podia aparecer erro de captura.
 
 Depois de alguns testes, o que resolveu foi:
 
@@ -41,7 +42,10 @@ Depois de alguns testes, o que resolveu foi:
 - subir o Flameshot com ajuste para Wayland;
 - configurar o autostart no GNOME;
 - liberar a tecla `Print` do atalho padrão do Ubuntu;
-- criar um atalho personalizado chamando o Flameshot da forma que realmente funcionou aqui.
+- criar um atalho personalizado chamando o Flameshot pelo workaround recomendado para GNOME Wayland.
+
+> [!NOTE]
+> No teste real, a tecla `Print` funcionou no GNOME Wayland com `script --command`. Já a captura pelo ícone da bandeja continuou falhando, porque o portal do GNOME bloqueia o diálogo de permissão quando a chamada parte de um aplicativo em segundo plano.
 
 ---
 
@@ -64,7 +68,7 @@ ubuntu:GNOME
 
 ou algo próximo envolvendo `GNOME`.
 
-Se aparecer `x11`, este guia provavelmente não é o caminho ideal para o seu caso.
+Se aparecer `x11`, o Flameshot tende a funcionar de forma mais simples. Se aparecer `wayland`, siga as etapas abaixo e considere a limitação do ícone da bandeja descrita no troubleshooting.
 
 ---
 
@@ -76,6 +80,24 @@ Instale pelo APT:
 ```bash
 sudo apt update
 sudo apt install -y flameshot
+```
+
+No GNOME Wayland, a captura depende do portal de desktop. Em Ubuntu Desktop normalmente isso já vem instalado, mas vale conferir:
+
+```bash
+apt policy xdg-desktop-portal xdg-desktop-portal-gnome
+```
+
+Se algum deles não estiver instalado, instale:
+
+```bash
+sudo apt install -y xdg-desktop-portal xdg-desktop-portal-gnome
+```
+
+Confira se os serviços do portal estão ativos na sessão do usuário:
+
+```bash
+systemctl --user status xdg-desktop-portal xdg-desktop-portal-gnome --no-pager
 ```
 
 Valide:
@@ -218,11 +240,11 @@ Use:
 
 ```text
 Nome: Flameshot
-Comando: bash -lc 'QT_QPA_PLATFORM=wayland flameshot gui'
+Comando: script --command "QT_QPA_PLATFORM=wayland flameshot gui" /dev/null
 Tecla: Print
 ```
 
-Aqui o detalhe importante foi justamente chamar via `bash -lc` com `QT_QPA_PLATFORM=wayland`. Chamando só `flameshot gui`, no meu ambiente não ficou confiável.
+Aqui o detalhe importante foi justamente chamar via `script --command`, mantendo `QT_QPA_PLATFORM=wayland`. Chamando só `flameshot gui`, no meu ambiente não ficou confiável no GNOME Wayland.
 
 ---
 
@@ -251,6 +273,8 @@ Resultado esperado:
 
 - abrir a interface de captura do Flameshot.
 
+No GNOME Wayland, valide principalmente pela tecla `Print`. A captura pelo ícone da bandeja pode falhar mesmo com o atalho funcionando.
+
 ### 7.3 Validar a captura
 
 Faça uma captura de teste.
@@ -270,7 +294,7 @@ Resultado esperado:
 Use exatamente este comando no atalho personalizado:
 
 ```bash
-bash -lc 'QT_QPA_PLATFORM=wayland flameshot gui'
+script --command "QT_QPA_PLATFORM=wayland flameshot gui" /dev/null
 ```
 
 Evite usar só:
@@ -330,13 +354,38 @@ gsettings set org.gnome.shell.keybindings show-screenshot-ui "[]"
 
 ### 8.4 Aparece erro de permissão ou captura não autorizada no Wayland
 
-No Wayland, a captura de tela passa pelo portal de desktop. Se o Flameshot abrir, mas não conseguir capturar, teste o comando recomendado na documentação do Flameshot:
+No Wayland, a captura de tela passa pelo portal de desktop. Se o Flameshot abrir, mas não conseguir capturar, volte na seção de instalação e confirme os pacotes `xdg-desktop-portal` e `xdg-desktop-portal-gnome`.
+
+Depois teste o comando recomendado na documentação do Flameshot:
 
 ```bash
 script --command "QT_QPA_PLATFORM=wayland flameshot gui" /dev/null
 ```
 
 Se aparecer uma janela pedindo permissão para compartilhar a tela, permita a captura e teste novamente.
+
+### 8.5 O atalho Print funciona, mas o ícone da bandeja não captura
+
+Esse foi o comportamento encontrado no GNOME Wayland: o atalho `Print` funciona usando `script --command`, mas a opção pelo ícone da bandeja mostra erro como:
+
+```text
+Flameshot Error
+Não foi possível capturar a tela
+```
+
+Confira o portal:
+
+```bash
+systemctl --user status xdg-desktop-portal xdg-desktop-portal-gnome --no-pager
+```
+
+Quando aparecer algo parecido com:
+
+```text
+Only the focused app is allowed to show a system access dialog
+```
+
+o problema está no fluxo de permissão do GNOME Wayland. Nesse caso, use a tecla `Print` configurada neste guia. Se você faz questão de usar a captura pelo ícone da bandeja, a alternativa mais previsível é usar sessão X11.
 
 ---
 
