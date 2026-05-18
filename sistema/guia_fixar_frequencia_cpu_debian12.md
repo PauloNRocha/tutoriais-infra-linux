@@ -1,31 +1,36 @@
-# Debian (12/13) e Proxmox: fixar a frequência da CPU no máximo ou para latência estável
+# Guia de Produção: Ajuste de frequência da CPU no Debian e Proxmox
 
-*Criado em 04 de dezembro de 2025 e atualizado em 16 de fevereiro de 2026*
+*Criado em: 04 de dezembro de 2025*  
+*Última atualização em: 18 de maio de 2026*
 
-Para extrair o máximo de desempenho de um processador, especialmente em tarefas que exigem muito da CPU, é possível travar a frequência de todos os núcleos no valor máximo. Este guia apresenta dois métodos para fazer isso no Debian 12: o clássico com `cpufrequtils` e o moderno com serviço `systemd`.
+Em alguns servidores, principalmente Proxmox, hosts com muita VM ou máquinas sensíveis a latência, deixar a CPU variando agressivamente pode atrapalhar a previsibilidade. Este guia mostra como usar o governador `performance` e, quando fizer sentido, limitar a faixa de frequência com `cpupower` no Debian 12/13 e Proxmox.
 
 > [!CAUTION]
-> Forçar a frequência máxima aumenta consumo de energia e geração de calor. Monitore temperatura da CPU. Este procedimento é mais indicado para servidores ou desktops com boa refrigeração.
+> Forçar perfil de desempenho aumenta consumo de energia e geração de calor. Monitore temperatura, refrigeração e throttling. Em produção, aplique primeiro em janela controlada e tenha rollback pronto.
+
+Importante: em CPUs modernas, “fixar frequência” nem sempre significa ver exatamente o mesmo MHz o tempo todo. O driver de scaling, turbo boost, limites térmicos, firmware/BIOS e C-States podem influenciar o valor real.
 
 ---
 
 ## Índice rápido
-1. [Pré-requisitos e Verificação](#1)
-2. [Método 1: Usando `cpufrequtils` (Clássico)](#2)
-3. [Método 2: Criando um Serviço `systemd` (Moderno)](#3)
-4. [Como Verificar se Funcionou](#4)
-5. [Como Reverter as Alterações](#5)
+1. [Pré-requisitos e verificação](#1)
+2. [Método 1: usando cpufrequtils](#2)
+3. [Método 2: serviço systemd com cpupower](#3)
+4. [Ajuste adicional para latência estável](#4)
+5. [Como verificar se funcionou](#5)
+6. [Como reverter as alterações](#6)
+7. [Referências](#referencias)
 
 ---
 
 <a id="1"></a>
-## 1. Pré-requisitos e Verificação
+## 1. Pré-requisitos e verificação
 
 Antes de tudo, instale os pacotes necessários e verifique quais frequências a sua CPU suporta.
 
 ```bash
 sudo apt update
-sudo apt install linux-cpupower cpufrequtils lm-sensors -y
+sudo apt install -y linux-cpupower cpufrequtils lm-sensors
 ```
 
 Inspecione a CPU:
@@ -34,16 +39,31 @@ Inspecione a CPU:
 cpupower frequency-info
 ```
 
-A saída mostra os governadores disponíveis e as frequências suportadas. O foco deste guia é usar o governador `performance` e, quando necessário, fixar também frequência mínima/máxima.
+A saída mostra driver, governadores disponíveis e limites de frequência.
+
+Verifique também diretamente pelo `sysfs`:
+
+```bash
+cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_driver
+cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors
+cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
+cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
+```
+
+Se o diretório `/sys/devices/system/cpu/cpu0/cpufreq/` não existir, o sistema não está expondo controle de frequência para essa CPU/VM. Isso pode acontecer em algumas máquinas virtuais.
+
+Se `performance` não aparecer em `scaling_available_governors`, não force o procedimento. Primeiro entenda o driver em uso e as opções disponíveis no hardware.
+
+Escolha apenas um método de persistência: `cpufrequtils` ou serviço `systemd` customizado. Usar os dois ao mesmo tempo normalmente não traz vantagem e deixa o troubleshooting mais confuso.
 
 ---
 
 <a id="2"></a>
-## 2. Método 1: Usando `cpufrequtils` (Clássico)
+## 2. Método 1: usando cpufrequtils
 
-Este método usa o serviço já preparado para governadores de frequência.
+Este método usa o serviço já preparado para aplicar o governador de frequência no boot. É simples e suficiente quando você só precisa manter o governador `performance`.
 
-### 2.1 Definindo o Governador
+### 2.1 Definindo o governador
 
 ```bash
 sudo cpupower frequency-set -g performance
@@ -67,45 +87,77 @@ Ative o serviço:
 sudo systemctl enable --now cpufrequtils
 ```
 
+Valide:
+
+```bash
+cpupower frequency-info | grep -E 'driver|governor|available cpufreq governors'
+```
+
 ---
 
 <a id="3"></a>
-## 3. Método 2: Criando um Serviço `systemd` (Moderno)
+## 3. Método 2: serviço systemd com cpupower
 
-Este método costuma ser mais direto porque usa um serviço dedicado para aplicar exatamente o que você definiu no boot.
+Este método costuma ser mais transparente porque deixa claro qual comando será aplicado no boot. É o caminho que prefiro quando quero controlar exatamente o comportamento e registrar a configuração em um serviço próprio.
 
 ### 3.1 Criando o arquivo do serviço
 
 ```bash
-sudo nano /etc/systemd/system/cpufreq-max.service
+sudo nano /etc/systemd/system/cpufreq-performance.service
 ```
 
-Cole o conteúdo abaixo. Ajuste `-d` e `-u` para o valor máximo real do seu processador, conforme `cpupower frequency-info`.
+Cole o conteúdo abaixo:
 
 ```ini
 [Unit]
-Description=Fixa a CPU na frequencia maxima ao iniciar
+Description=Aplica governador performance na CPU ao iniciar
+ConditionPathExists=/usr/bin/cpupower
 
 [Service]
 Type=oneshot
-# Ajuste para a frequencia maxima real da sua CPU (exemplo)
-ExecStart=/usr/bin/cpupower frequency-set -g performance -d 3.4GHz -u 3.4GHz
+ExecStart=/usr/bin/cpupower frequency-set -g performance
 RemainAfterExit=yes
 
 [Install]
 WantedBy=multi-user.target
 ```
 
+Se você realmente precisa fixar também a frequência mínima e máxima, descubra primeiro os valores suportados:
+
+```bash
+cpupower frequency-info
+```
+
+Depois ajuste o `ExecStart=` com valores reais do seu processador. Exemplo:
+
+```ini
+ExecStart=/usr/bin/cpupower frequency-set -g performance -d 3.4GHz -u 3.4GHz
+```
+
+Use esse formato somente se o valor existir para sua CPU. Um valor incorreto pode fazer o serviço falhar no boot.
+
 ### 3.2 Ativando o serviço
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now cpufreq-max.service
+sudo systemctl enable --now cpufreq-performance.service
 ```
 
-### 3.3 Ajuste adicional para servidores (Proxmox / latência estável)
+Valide:
 
-Em alguns hardwares, apenas definir o governador não impede quedas de frequência em idle. Para manter latência previsível, desative C-States profundos no boot.
+```bash
+systemctl status cpufreq-performance.service --no-pager
+cpupower frequency-info | grep -E 'driver|governor|current CPU frequency|available cpufreq governors'
+```
+
+---
+
+<a id="4"></a>
+## 4. Ajuste adicional para latência estável
+
+Em alguns hardwares, apenas definir o governador não impede quedas de frequência em idle. Para reduzir variações de latência, você pode limitar C-States profundos no boot.
+
+Use esta etapa apenas se você realmente precisa de latência mais previsível. Ela aumenta consumo e temperatura.
 
 Edite o GRUB:
 
@@ -126,23 +178,35 @@ O que cada parâmetro faz:
 
 Na prática, isso mantém a CPU mais pronta para carga, com menor oscilação de frequência e latência.
 
-Aplicando a alteração:
-
-Debian/Ubuntu padrão:
+Aplicando a alteração em Debian/Ubuntu padrão com GRUB:
 
 ```bash
 sudo update-grub
 sudo reboot
 ```
 
-Se o sistema for Proxmox:
+Em Proxmox, verifique o modo de boot:
+
+```bash
+command -v proxmox-boot-tool
+sudo proxmox-boot-tool status
+```
+
+Se `command -v proxmox-boot-tool` retornar um caminho e o status mostrar entradas de boot gerenciadas pelo Proxmox, atualize as entradas com:
 
 ```bash
 sudo proxmox-boot-tool refresh
 sudo reboot
 ```
 
-### 3.4 Troubleshooting (problemas comuns)
+Se o host usa GRUB tradicional, use:
+
+```bash
+sudo update-grub
+sudo reboot
+```
+
+### 4.1 Troubleshooting
 
 #### Frequência não fica fixa (cai para ~1400 MHz em idle)
 
@@ -157,8 +221,8 @@ Deve conter `processor.max_cstate=1 idle=nomwait`. Se não tiver, refaça a etap
 #### Serviço ativo mas não aplica no boot
 
 ```bash
-systemctl status cpufreq-max.service
-journalctl -u cpufreq-max.service -b
+systemctl status cpufreq-performance.service
+journalctl -u cpufreq-performance.service -b
 ```
 
 Se falhar, confirme caminho do binário:
@@ -182,14 +246,16 @@ Se a CPU estiver quente demais, ela reduzirá clock automaticamente. Ajuste refr
 #### Após reboot voltou ao comportamento antigo (Proxmox)
 
 ```bash
-sudo proxmox-boot-tool refresh
-sudo reboot
+command -v proxmox-boot-tool
+sudo proxmox-boot-tool status
 ```
+
+Se `command -v proxmox-boot-tool` retornar um caminho, rode `sudo proxmox-boot-tool refresh`. Se não retornar caminho, o host provavelmente usa GRUB tradicional; nesse caso, rode `sudo update-grub`.
 
 ---
 
-<a id="4"></a>
-## 4. Como Verificar se Funcionou
+<a id="5"></a>
+## 5. Como verificar se funcionou
 
 Depois de aplicar um dos métodos, valide frequência e temperatura.
 
@@ -201,6 +267,19 @@ watch -n1 "grep 'cpu MHz' /proc/cpuinfo"
 
 As frequências devem permanecer próximas do valor configurado.
 
+Verificar o governador por CPU:
+
+```bash
+cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor | sort -u
+```
+
+Verificar limites aplicados:
+
+```bash
+cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
+cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
+```
+
 ### Monitorar temperatura
 
 ```bash
@@ -211,10 +290,10 @@ Se necessário, rode `sudo sensors-detect` na primeira vez.
 
 ---
 
-<a id="5"></a>
-## 5. Como Reverter as Alterações
+<a id="6"></a>
+## 6. Como reverter as alterações
 
-### Para o Método 1 (`cpufrequtils`)
+### 6.1 Para o método 1 (`cpufrequtils`)
 
 1. Edite:
 
@@ -222,7 +301,7 @@ Se necessário, rode `sudo sensors-detect` na primeira vez.
 sudo nano /etc/default/cpufrequtils
 ```
 
-Comente `GOVERNOR="performance"` ou altere para `ondemand`/`schedutil`.
+Comente `GOVERNOR="performance"` ou altere para um governador disponível no seu sistema, como `schedutil` ou `ondemand`.
 
 2. Reinicie ou desabilite:
 
@@ -236,33 +315,68 @@ ou
 sudo systemctl disable --now cpufrequtils
 ```
 
-### Para o Método 2 (`systemd` customizado)
+### 6.2 Para o método 2 (`systemd` customizado)
 
 1. Desative e remova o serviço:
 
 ```bash
-sudo systemctl disable --now cpufreq-max.service
-sudo rm /etc/systemd/system/cpufreq-max.service
+sudo systemctl disable --now cpufreq-performance.service
+sudo rm /etc/systemd/system/cpufreq-performance.service
 sudo systemctl daemon-reload
 ```
 
 2. Defina governador padrão:
 
 ```bash
-sudo cpupower frequency-set -g ondemand
+cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors
+sudo cpupower frequency-set -g schedutil
 ```
 
-Isso restaura o comportamento padrão de gerenciamento de frequência da CPU.
+Se `schedutil` não existir no seu sistema, use outro governador disponível, como `ondemand` ou `powersave`.
+
+### 6.3 Remover parâmetros de C-State no boot
+
+Se você aplicou `processor.max_cstate=1 idle=nomwait`, remova esses parâmetros de:
+
+```bash
+sudo nano /etc/default/grub
+```
+
+Depois atualize o bootloader conforme seu ambiente.
+
+Debian/Ubuntu ou Proxmox com GRUB:
+
+```bash
+sudo update-grub
+sudo reboot
+```
+
+Proxmox com `proxmox-boot-tool`:
+
+```bash
+sudo proxmox-boot-tool refresh
+sudo reboot
+```
+
+Após reiniciar, confirme:
+
+```bash
+cat /proc/cmdline
+```
 
 ---
 
+<a id="referencias"></a>
 ## Referências (fontes para consulta)
 
 - CPU Performance Scaling (Kernel docs): https://www.kernel.org/doc/html/latest/admin-guide/pm/cpufreq.html
-- `cpupower(1)`: https://manpages.debian.org/bookworm/linux-cpupower/cpupower.1.en.html
-- `systemd.service(5)`: https://manpages.debian.org/bookworm/systemd/systemd.service.5.en.html
+- `cpupower(1)` Debian Trixie: https://manpages.debian.org/trixie/linux-cpupower/cpupower.1.en.html
+- `systemd.service(5)` Debian Trixie: https://manpages.debian.org/trixie/systemd/systemd.service.5.en.html
+- Proxmox VE bootloader: https://pve.proxmox.com/wiki/Host_Bootloader
 
 ---
 
+## Créditos
+
 Autor: Paulo Rocha  
-Repositório: https://github.com/PauloNRocha
+Repositório: https://github.com/PauloNRocha/tutoriais-infra-linux

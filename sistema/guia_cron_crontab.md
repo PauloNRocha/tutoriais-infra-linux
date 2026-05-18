@@ -65,8 +65,10 @@ systemctl status crond --no-pager
 Antes de editar, gosto de salvar uma cópia da crontab atual. Isso evita perder agendamentos por engano.
 
 ```bash
-crontab -l > "$HOME/crontab.backup.$(date +%F_%H%M%S)" 2>/dev/null || true
+crontab -l > "$HOME/crontab.backup.$(date +%F_%H%M%S)"
 ```
+
+Se ainda não existir crontab para o usuário, o comando pode avisar `no crontab for usuario`. Nesse caso, não há nada para salvar ainda; siga para a criação com `crontab -e`.
 
 Para editar a crontab do usuário atual:
 
