@@ -157,7 +157,13 @@ cpupower frequency-info | grep -E 'driver|governor|current CPU frequency|availab
 
 Em alguns hardwares, apenas definir o governador não impede quedas de frequência em idle. Para reduzir variações de latência, você pode limitar C-States profundos no boot.
 
-Use esta etapa apenas se você realmente precisa de latência mais previsível. Ela aumenta consumo e temperatura.
+Use esta etapa apenas se você realmente precisa de latência mais previsível. Ela aumenta consumo, temperatura e pode mudar o comportamento de economia de energia do servidor.
+
+Antes de editar, veja como a linha está hoje:
+
+```bash
+grep '^GRUB_CMDLINE_LINUX_DEFAULT=' /etc/default/grub
+```
 
 Edite o GRUB:
 
@@ -165,16 +171,18 @@ Edite o GRUB:
 sudo nano /etc/default/grub
 ```
 
-Altere para:
+Adicione os parâmetros mantendo o que já existir na linha. Exemplo:
 
 ```text
 GRUB_CMDLINE_LINUX_DEFAULT="quiet processor.max_cstate=1 idle=nomwait"
 ```
 
+Se a sua linha já tiver outros parâmetros importantes, como opções de IOMMU, console serial ou alguma configuração específica do servidor, não apague esses valores. Apenas acrescente `processor.max_cstate=1 idle=nomwait` no final da linha.
+
 O que cada parâmetro faz:
 
 - `processor.max_cstate=1`: impede entrada em C-States profundos, reduzindo latência para o core voltar a processar.
-- `idle=nomwait`: desativa mecanismo de idle que tende a derrubar clock em períodos curtos sem carga.
+- `idle=nomwait`: no x86, evita o uso da instrução `MWAIT` para estados de idle. Em Intel, isso força o uso do driver `acpi_idle` quando as tabelas ACPI permitem.
 
 Na prática, isso mantém a CPU mais pronta para carga, com menor oscilação de frequência e latência.
 
@@ -317,11 +325,11 @@ sudo systemctl disable --now cpufrequtils
 
 ### 6.2 Para o método 2 (`systemd` customizado)
 
-1. Desative e remova o serviço:
+1. Desative o serviço e preserve uma cópia do arquivo:
 
 ```bash
 sudo systemctl disable --now cpufreq-performance.service
-sudo rm /etc/systemd/system/cpufreq-performance.service
+sudo mv /etc/systemd/system/cpufreq-performance.service /etc/systemd/system/cpufreq-performance.service.bak
 sudo systemctl daemon-reload
 ```
 
@@ -370,7 +378,9 @@ cat /proc/cmdline
 ## Referências (fontes para consulta)
 
 - CPU Performance Scaling (Kernel docs): https://www.kernel.org/doc/html/latest/admin-guide/pm/cpufreq.html
-- `cpupower(1)` Debian Trixie: https://manpages.debian.org/trixie/linux-cpupower/cpupower.1.en.html
+- CPU Idle Time Management (Kernel docs): https://docs.kernel.org/admin-guide/pm/cpuidle.html
+- `intel_idle` CPU Idle Time Management Driver (Kernel docs): https://www.kernel.org/doc/html/latest/admin-guide/pm/intel_idle.html
+- `cpupower-frequency-set(1)` Debian: https://manpages.debian.org/unstable/linux-cpupower/cpupower-frequency-set.1.en.html
 - `systemd.service(5)` Debian Trixie: https://manpages.debian.org/trixie/systemd/systemd.service.5.en.html
 - Proxmox VE bootloader: https://pve.proxmox.com/wiki/Host_Bootloader
 
