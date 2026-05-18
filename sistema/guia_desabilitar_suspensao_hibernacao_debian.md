@@ -31,6 +31,19 @@ systemctl list-unit-files sleep.target suspend.target hibernate.target hybrid-sl
 
 Em Debian 12/13 com `systemd`, esses alvos controlam os caminhos principais de suspensão, hibernação, suspensão híbrida e suspensão seguida de hibernação.
 
+Em um sistema sem bloqueio manual, a saída costuma aparecer parecida com esta:
+
+```text
+UNIT FILE                     STATE  PRESET
+hibernate.target              static -
+hybrid-sleep.target           static -
+sleep.target                  static -
+suspend-then-hibernate.target static -
+suspend.target                static -
+
+5 unit files listed.
+```
+
 Se você está em servidor remoto, faça isso com cuidado. Bloquear suspensão é seguro na maioria dos cenários de servidor, mas reiniciar `systemd-logind` em desktop/notebook pode afetar integração com sessão gráfica. Salve o trabalho aberto antes de aplicar.
 
 ---
@@ -55,6 +68,21 @@ systemctl list-unit-files sleep.target suspend.target hibernate.target hybrid-sl
 ```
 
 O esperado é que os alvos apareçam como `masked`.
+
+Exemplo:
+
+```text
+UNIT FILE                     STATE  PRESET
+hibernate.target              masked enabled
+hybrid-sleep.target           masked enabled
+sleep.target                  masked enabled
+suspend-then-hibernate.target masked enabled
+suspend.target                masked enabled
+
+5 unit files listed.
+```
+
+Neste caso, o campo mais importante é `STATE`. Se ele estiver como `masked`, o bloqueio está aplicado. O `PRESET` pode aparecer como `enabled`; isso é apenas a política de preset do sistema, não quer dizer que a suspensão esteja liberada.
 
 Se quiser testar manualmente, o comando abaixo deve falhar informando que a unit está mascarada:
 
@@ -113,7 +141,19 @@ Confira a configuração carregada:
 systemd-analyze cat-config systemd/logind.conf
 ```
 
-Procure no final da saída pelo arquivo `10-disable-lid-switch.conf` e pelas três opções com valor `ignore`.
+Procure na saída pelo arquivo `10-disable-lid-switch.conf` e pelas três opções com valor `ignore`.
+
+Exemplo:
+
+```text
+# /etc/systemd/logind.conf.d/10-disable-lid-switch.conf
+[Login]
+HandleLidSwitch=ignore
+HandleLidSwitchExternalPower=ignore
+HandleLidSwitchDocked=ignore
+```
+
+Podem aparecer outros drop-ins do sistema ou de pacotes, como `unattended-upgrades`, antes ou depois do seu arquivo. Isso é normal. O ponto importante é confirmar que as opções `HandleLidSwitch`, `HandleLidSwitchExternalPower` e `HandleLidSwitchDocked` aparecem com valor `ignore`.
 
 ---
 
