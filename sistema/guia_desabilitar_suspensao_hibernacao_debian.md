@@ -1,95 +1,169 @@
-# Debian: desabilitar suspensão e hibernação (systemd)
+# Guia Prático: Desabilitar suspensão e hibernação no Debian com systemd
 
-*Criado em 04 de dezembro de 2025 e atualizado em 08 de dezembro de 2025*
+*Criado em: 04 de dezembro de 2025*  
+*Última atualização em: 18 de maio de 2026*
 
-Às vezes, especialmente em servidores ou em notebooks com hardware específico, os modos de suspensão e hibernação podem causar mais problemas do que soluções. Este guia mostra formas corretas de desabilitar esses recursos usando `systemd`.
+Em servidor, máquina de bancada ou notebook usado como desktop, suspensão e hibernação podem virar problema: serviço para, sessão cai, acesso remoto some e a máquina só volta com intervenção local. Aqui a ideia é deixar registrado um jeito simples de bloquear essas ações pelo `systemd`, sem remover pacotes nem mexer em configuração de energia do ambiente gráfico.
 
 > [!NOTE]
-> **Configurações da BIOS/UEFI**: em alguns hardwares, opções de energia na BIOS/UEFI podem sobrepor ou interferir nas configurações do sistema operacional. Se, mesmo após aplicar os passos deste guia, o comportamento persistir, verifique opções como “Deep Sleep” e “ACPI Suspend State” na BIOS/UEFI.
+> Em alguns hardwares, opções da BIOS/UEFI também interferem nesse comportamento. Se o sistema continuar suspendendo mesmo depois dos ajustes, verifique opções como `Deep Sleep`, `ACPI Suspend State`, `Wake on Lid Open` ou configurações equivalentes.
 
 ---
 
 ## Índice rápido
-1. [Método 1: A Forma Rápida e Radical (mask)](#1)
-2. [Método 2: Desabilitar Apenas a Suspensão ao Fechar a Tampa do Notebook](#2)
-3. [Como Reverter as Alterações](#3)
+
+1. [Antes de alterar](#1)
+2. [Método 1: bloquear suspensão e hibernação no systemd](#2)
+3. [Método 2: ignorar fechamento da tampa do notebook](#3)
+4. [Como reverter](#4)
+5. [Referências](#referencias)
 
 ---
 
 <a id="1"></a>
-## 1. Método 1: A Forma Rápida e Radical (mask)
+## 1. Antes de alterar
 
-Se você quer desabilitar completamente qualquer tentativa do sistema de suspender ou hibernar, o comando `systemctl mask` é a ferramenta certa. O que ele faz é criar um link simbólico de um serviço para `/dev/null`, efetivamente "apagando" o serviço da visão do `systemd` sem removê-lo.
-
-Execute o seguinte comando para mascarar todos os alvos relacionados a `sleep`:
+Confira o estado atual dos alvos de suspensão e hibernação:
 
 ```bash
-sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
+systemctl list-unit-files sleep.target suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
 ```
-Com isso, as opções de suspender e hibernar desaparecerão dos menus do seu ambiente gráfico e nenhuma ação (como fechar a tampa do notebook) irá acioná-las.
+
+Em Debian 12/13 com `systemd`, esses alvos controlam os caminhos principais de suspensão, hibernação, suspensão híbrida e suspensão seguida de hibernação.
+
+Se você está em servidor remoto, faça isso com cuidado. Bloquear suspensão é seguro na maioria dos cenários de servidor, mas reiniciar `systemd-logind` em desktop/notebook pode afetar integração com sessão gráfica. Salve o trabalho aberto antes de aplicar.
 
 ---
 
 <a id="2"></a>
-## 2. Método 2: Desabilitar Apenas a Suspensão ao Fechar a Tampa do Notebook
+## 2. Método 1: bloquear suspensão e hibernação no systemd
 
-Talvez você não queira desabilitar tudo, mas apenas impedir que o notebook suspenda ao fechar a tampa. Isso é muito comum para quem usa o notebook como um "desktop", conectado a um monitor externo.
+Este é o caminho mais direto quando a máquina não deve dormir em nenhuma hipótese. É o método que faz mais sentido em servidor, Proxmox, host de laboratório, máquina de monitoramento ou qualquer equipamento que precisa ficar sempre acessível.
 
-A configuração para isso fica no arquivo `logind.conf`.
+O `systemctl mask` cria um link da unit para `/dev/null`. Na prática, isso impede que o `systemd` inicie aquela unit, mesmo que outro componente tente chamar a suspensão.
 
-1.  **Edite o arquivo de configuração:**
-    ```bash
-    sudo nano /etc/systemd/logind.conf
-    ```
-2.  **Encontre e altere as seguintes linhas:**
-    Procure por estas linhas, que provavelmente estarão comentadas com um `#` no início:
-    ```ini
-    #HandleLidSwitch=suspend
-    #HandleLidSwitchExternalPower=suspend
-    #HandleLidSwitchDocked=suspend
-    ```
-    Remova o `#` do início e mude o valor para `ignore`. Deve ficar assim:
-    ```ini
-    HandleLidSwitch=ignore
-    HandleLidSwitchExternalPower=ignore
-    HandleLidSwitchDocked=ignore
-    ```
-    - `HandleLidSwitch`: Comportamento quando a tampa é fechada (na bateria).
-    - `HandleLidSwitchExternalPower`: Comportamento quando a tampa é fechada (conectado na tomada).
-    - `HandleLidSwitchDocked`: Comportamento quando a tampa é fechada (conectado a uma docking station).
+Execute:
 
-3.  **Aplique as alterações:**
-    Para que as novas configurações tenham efeito, você pode reiniciar o serviço `logind` sem precisar reiniciar o computador.
-    ```bash
-    sudo systemctl restart systemd-logind.service
-    ```
-    Se a alteração foi aplicada corretamente, fechar a tampa não fará mais nada.
+```bash
+sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
+```
+
+Valide:
+
+```bash
+systemctl list-unit-files sleep.target suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
+```
+
+O esperado é que os alvos apareçam como `masked`.
+
+Se quiser testar manualmente, o comando abaixo deve falhar informando que a unit está mascarada:
+
+```bash
+systemctl suspend
+```
+
+> [!CAUTION]
+> Não use esse método em notebook que precisa suspender em uso normal. Ele é pensado para máquina que deve permanecer ligada.
 
 ---
 
 <a id="3"></a>
-## 3. Como Reverter as Alterações
+## 3. Método 2: ignorar fechamento da tampa do notebook
 
-Se você se arrepender e quiser os recursos de volta, o processo é igualmente simples.
+Este método é útil quando você não quer bloquear todo o mecanismo de suspensão, mas quer impedir que o notebook suspenda ao fechar a tampa. É comum em notebook usado como desktop, conectado em monitor externo, teclado e mouse.
 
-- **Para o Método 1 (mask):**
-  Use o comando `unmask` para reativar os serviços.
-  ```bash
-  sudo systemctl unmask sleep.target suspend.target hibernate.target hybrid-sleep.target
-  ```
-- **Para o Método 2 (logind.conf):**
-  Simplesmente edite o arquivo `/etc/systemd/logind.conf` novamente e comente as linhas que você alterou (coloque o `#` de volta no início) ou restaure o valor original (`suspend`). Depois, reinicie o serviço novamente.
+Em vez de editar diretamente `/etc/systemd/logind.conf`, prefiro criar um arquivo separado em `/etc/systemd/logind.conf.d/`. Fica mais fácil revisar e desfazer depois.
+
+Crie o diretório:
+
+```bash
+sudo mkdir -p /etc/systemd/logind.conf.d
+```
+
+Crie o arquivo:
+
+```bash
+sudo nano /etc/systemd/logind.conf.d/10-disable-lid-switch.conf
+```
+
+Cole o conteúdo abaixo:
+
+```ini
+[Login]
+HandleLidSwitch=ignore
+HandleLidSwitchExternalPower=ignore
+HandleLidSwitchDocked=ignore
+```
+
+O que cada opção faz:
+
+- `HandleLidSwitch`: ação ao fechar a tampa usando bateria;
+- `HandleLidSwitchExternalPower`: ação ao fechar a tampa na tomada;
+- `HandleLidSwitchDocked`: ação ao fechar a tampa com dock ou monitor externo.
+
+Reinicie o `systemd-logind` para aplicar:
+
+```bash
+sudo systemctl restart systemd-logind.service
+```
+
+Confira a configuração carregada:
+
+```bash
+systemd-analyze cat-config systemd/logind.conf
+```
+
+Procure no final da saída pelo arquivo `10-disable-lid-switch.conf` e pelas três opções com valor `ignore`.
 
 ---
 
+<a id="4"></a>
+## 4. Como reverter
+
+### 4.1 Reverter o método 1
+
+Remova o bloqueio dos alvos:
+
+```bash
+sudo systemctl unmask sleep.target suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
+```
+
+Confira:
+
+```bash
+systemctl list-unit-files sleep.target suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
+```
+
+### 4.2 Reverter o método 2
+
+Renomeie o arquivo criado para ignorar a tampa:
+
+```bash
+sudo mv /etc/systemd/logind.conf.d/10-disable-lid-switch.conf /etc/systemd/logind.conf.d/10-disable-lid-switch.conf.bak
+```
+
+Reinicie o serviço:
+
+```bash
+sudo systemctl restart systemd-logind.service
+```
+
+Depois de confirmar que o comportamento voltou ao normal, você pode remover o `.bak` se não precisar manter histórico local.
+
+---
+
+<a id="referencias"></a>
 ## Referências (fontes para consulta)
 
-### systemd (manpages Debian)
+### systemd
 
-- `systemctl(1)`: https://manpages.debian.org/bookworm/systemd/systemctl.1.en.html
-- `logind.conf(5)`: https://manpages.debian.org/bookworm/systemd/logind.conf.5.en.html
+- `systemctl(1)` Debian Trixie: https://manpages.debian.org/trixie/systemd/systemctl.1.en.html
+- `systemd.special(7)` Debian Trixie: https://manpages.debian.org/trixie/systemd/systemd.special.7.en.html
+- `logind.conf.d(5)` Debian Bookworm Backports: https://manpages.debian.org/bookworm-backports/systemd/logind.conf.d.5.en.html
 
 ---
 
+## Créditos
+
 Autor: Paulo Rocha  
-Repositório: https://github.com/PauloNRocha
+Repositório: https://github.com/PauloNRocha/tutoriais-infra-linux
