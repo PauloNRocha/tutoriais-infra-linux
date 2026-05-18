@@ -2,7 +2,7 @@
 
 *Criado em: 15 de janeiro de 2026*
 
-Este tutorial é um guia **completo, detalhado, didático e pronto para produção** para implantar um **servidor NTP interno** usando **exclusivamente o Chrony** no **Debian 13**.
+Ter horário confiável é uma daquelas bases silenciosas da infraestrutura: quando funciona, quase ninguém lembra; quando falha, logs, certificados, autenticação e troubleshooting ficam confusos rapidamente. Este guia registra uma implantação de **servidor NTP interno** com **Chrony** no **Debian 13**, pensado para rede corporativa, datacenter ou provedor, sem expor NTP publicamente para a internet.
 
 O servidor ficará com dois papéis ao mesmo tempo:
 - **Cliente**: sincroniza com servidores NTP públicos confiáveis (upstreams).
@@ -24,7 +24,7 @@ O servidor ficará com dois papéis ao mesmo tempo:
 9. [Logs e troubleshooting](#9-logs-e-troubleshooting)
 10. [Manutenção e operação](#10-manutenção-e-operação)
 11. [NTS](#11-nts-network-time-security-opcional)
-12. [Referências](#12-referências-leitura-recomendada)
+12. [Referências](#12-referências-fontes-para-consulta)
 
 ---
 
@@ -266,7 +266,7 @@ server d.st1.ntp.br iburst nts
 server gps.ntp.br iburst nts
 ```
 
-### 5.3 Configuração exemplo (servidor NTP interno), comentada e pronta para produção
+### 5.3 Configuração exemplo (servidor NTP interno), comentada e segura
 
 Substitua o conteúdo do seu `chrony.conf` por um modelo como este (ajuste as redes internas):
 
@@ -719,9 +719,9 @@ sudo ls -la /var/log/chrony || true
 sudo tail -f /var/log/chrony/tracking.log || true
 ```
 
-### 9.2 Diagnóstico rápido (runbook de produção)
+### 9.2 Diagnóstico rápido em produção
 
-Esta seção é pensada para **incidentes reais** (NOC/produção): curta, direta e “executável”.
+Esta seção é pensada para **incidentes reais** (NOC/produção): curta, direta e executável.
 
 #### Sintoma A: o servidor não sincroniza com upstream (“hora não ajusta” / tudo `^?` / `Reach` zerado)
 
@@ -794,7 +794,7 @@ Esta seção é pensada para **incidentes reais** (NOC/produção): curta, diret
 
 ### 9.3 Troubleshooting aprofundado (explicações e casos)
 
-Esta seção explica **o porquê** dos sintomas do runbook (seção 9.2) e como evitar armadilhas comuns em produção ISP.
+Esta seção explica **o porquê** dos sintomas do diagnóstico rápido (seção 9.2) e como evitar armadilhas comuns em produção ISP.
 
 ### 9.4 Recuperação do Chrony em estado inconsistente (Stratum 0 / 1970 / Not synchronised)
 
@@ -837,7 +837,7 @@ Observação importante sobre `makestep`:
 - use quando a diferença é grande e você precisa corrigir rápido (boot/restore/clone);
 - evite “step” durante operação normal, porque pode bagunçar logs e processos sensíveis.
 
-#### 9.3.1 “Hora não ajusta”: o que isso costuma significar
+#### 9.5 “Hora não ajusta”: o que isso costuma significar
 
 Quando o servidor não sincroniza com upstream, os sintomas mais comuns são:
 - `chronyc sources -v` com tudo `^?` (fontes inacessíveis);
@@ -849,25 +849,25 @@ O que normalmente está por trás disso (do mais comum para o menos comum):
 - **DNS quebrado** no servidor (não resolve pools/hosts);
 - **upstreams indisponíveis** (fonte fora/rota ruim).
 
-Se você já executou o **Sintoma A** do runbook (9.2) e ainda não ficou claro, use o `tcpdump` (9.2) para separar “não sai pacote”, “sai e não volta” e “sai e volta mas está instável”. Isso direciona a correção sem tentativa-e-erro.
+Se você já executou o **Sintoma A** do diagnóstico rápido (9.2) e ainda não ficou claro, use o `tcpdump` (9.2) para separar “não sai pacote”, “sai e não volta” e “sai e volta mas está instável”. Isso direciona a correção sem tentativa-e-erro.
 
-#### 9.3.2 “Offset alto”: por que acontece e como pensar
+#### 9.6 “Offset alto”: por que acontece e como pensar
 
 Offset alto que não converge costuma ser consequência de:
 - rede ruim até as fontes (perda/jitter), gerando medições inconsistentes;
 - host com carga alta (CPU/memória), atrasando respostas e amostras;
 - driftfile ausente/sem gravação, prejudicando a compensação de drift entre boots.
 
-No runbook (9.2), você já valida `tracking`, `sourcestats` e `driftfile`. Se os dados apontarem para instabilidade nas fontes, o foco deixa de ser “Chrony” e passa a ser **qualidade de rede**/seleção de upstream.
+No diagnóstico rápido (9.2), você já valida `tracking`, `sourcestats` e `driftfile`. Se os dados apontarem para instabilidade nas fontes, o foco deixa de ser “Chrony” e passa a ser **qualidade de rede**/seleção de upstream.
 
-#### 9.3.3 “Cliente não sincroniza”: causas típicas (e por que o problema pode ser “silencioso”)
+#### 9.7 “Cliente não sincroniza”: causas típicas
 
 Em produção, o caso mais comum não é “Chrony não funciona”, e sim “política não está coerente”:
 - o cliente aponta para o servidor correto, mas a rede/IP não está coberta pelos `allow`;
 - o `allow` cobre, mas o firewall (nftables) não cobre (ou cobre outro range);
 - o servidor está sincronizado como **cliente**, mas não está servindo NTP (não está escutando em UDP/123).
 
-Por isso o runbook (9.2) primeiro checa:
+Por isso o diagnóstico rápido (9.2) primeiro checa:
 1) `accheck` (política do Chrony),
 2) escuta em UDP/123,
 3) firewall,
@@ -875,7 +875,7 @@ Por isso o runbook (9.2) primeiro checa:
 
 Se no `tcpdump` (9.2) você vê apenas **Client** chegando e não vê **Server** saindo, o problema deixa de ser “o cliente” e passa a ser “o servidor não está respondendo”. Isso normalmente é coerente com falha de política, serviço que não está servindo, ou bloqueio local.
 
-#### 9.3.4 Aviso MUITO importante: `deny all` pode quebrar “silenciosamente”
+#### 9.8 Cuidado com `deny all`
 
 Evite usar `deny all` como “fechamento” do arquivo.
 
@@ -884,7 +884,7 @@ Padrão mais “à prova de susto”:
 - restrinja no firewall (nftables) por rede;
 - se precisar negar um trecho específico, use `deny <subnet>` apenas para aquele trecho.
 
-#### 9.3.5 Alinhe os ranges (chrony.conf ↔ firewall ↔ IPs reais)
+#### 9.9 Alinhe os ranges (chrony.conf ↔ firewall ↔ IPs reais)
 
 Um erro comum em redes grandes é ter “ranges parecidos” mas diferentes:
 - no `chrony.conf`: `allow 192.168.10.0/24`
@@ -893,7 +893,7 @@ Um erro comum em redes grandes é ter “ranges parecidos” mas diferentes:
 Resultado: chega request, mas a política não está coerente e a validação fica confusa.
 
 Boa prática:
-1) descubra o IP real do cliente (pelo `tcpdump`, conforme runbook 9.2);
+1) descubra o IP real do cliente (pelo `tcpdump`, conforme diagnóstico rápido 9.2);
 2) garanta que ele está dentro de um `allow` **e** dentro do conjunto liberado no firewall.
 
 ---
@@ -1133,43 +1133,37 @@ Alguns serviços públicos de NTP utilizam “leap smear” (tratamento especial
 
 ---
 
-## 12. Referências (leitura recomendada)
+## 12. Referências (fontes para consulta)
 
+### Chrony
 
-Chrony (documentação e manpages):
-https://chrony-project.org/documentation.html
-https://chrony-project.org/doc/4.1/chrony.conf.html
-https://chrony-project.org/doc/4.1/chronyc.html
+- Documentação oficial: https://chrony-project.org/documentation.html
+- `chrony.conf(5)`: https://chrony-project.org/doc/4.6/chrony.conf.html
+- `chronyc(1)`: https://chrony-project.org/doc/4.6/chronyc.html
+- Manpage Debian Trixie `chrony.conf(5)`: https://manpages.debian.org/trixie/chrony/chrony.conf.5.en.html
 
-Manpages do Debian (chrony.conf / chronyc):
-https://manpages.debian.org/chrony.conf
-https://manpages.debian.org/chronyc
+### nftables
 
-nftables:
-https://wiki.nftables.org/wiki-nftables/index.php/Main_Page
+- Wiki oficial: https://wiki.nftables.org/wiki-nftables/index.php/Main_Page
 
-NTS (padrão e conceito):
-https://www.rfc-editor.org/rfc/rfc8915
+### NTS
 
-NTS no Chrony (documentação do chrony.conf):
-https://chrony-project.org/doc/4.6/chrony.conf.html
+- RFC 8915: https://www.rfc-editor.org/rfc/rfc8915
+- NTS no Chrony: https://chrony-project.org/doc/4.6/chrony.conf.html
+- Validação com `chronyc -N`: https://chrony-project.org/doc/4.6/chronyc.html
+- Visão geral Cloudflare: https://developers.cloudflare.com/time-services/nts/
+- Netnod NTS: https://www.netnod.se/time-and-frequency-services/nts
 
-Exemplos e validação de NTS (chronyc -N):
-https://chrony-project.org/doc/4.6.1/chronyc.html
+### NTP.br
 
-NTS (visão geral e fases):
-https://developers.cloudflare.com/time-services/nts/
-
-Serviços públicos com NTS (exemplos e portas):
-https://www.netnod.se/time-and-frequency-services/nts
-
-NTP.br (Hora Legal Brasileira / servidores / NTS):
-https://ntp.br/
-https://www.ntp.br/faq/
-https://ntp.br/guia/linux/#chrony
-https://ntp.br/conteudo/ntp/
+- Site oficial: https://ntp.br/
+- FAQ: https://www.ntp.br/faq/
+- Guia Linux com Chrony: https://ntp.br/guia/linux/#chrony
+- Conteúdo técnico: https://ntp.br/conteudo/ntp/
 
 ---
 
+## Créditos
+
 Autor: Paulo Rocha  
-Repositório: https://github.com/PauloNRocha
+Repositório: https://github.com/PauloNRocha/tutoriais-infra-linux
