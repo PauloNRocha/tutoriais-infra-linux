@@ -1,7 +1,7 @@
 # Guia de Produção: Krill RPKI no Debian 13 com Nginx e nftables
 
 *Criado em: 03 de janeiro de 2026*  
-*Última atualização em: 25 de março de 2026*
+*Última atualização em: 21 de maio de 2026*
 
 Krill parece um serviço pequeno quando a gente olha só para a interface, mas em produção ele passa a fazer parte da saúde dos anúncios BGP. Se ROA, Parent, Repository ou publicação quebrarem, o impacto pode aparecer fora do servidor, direto na validação das rotas. Este guia registra a implantação que fui consolidando no **Debian 13 (Trixie)**, com acesso administrativo seguro, publicação RPKI funcional e proteção básica do host com `nftables`.
 
@@ -11,7 +11,7 @@ A ideia aqui é deixar a CA RPKI operando de forma previsível, com acesso por *
 
 ## Índice rápido
 1. [Arquitetura Recomendada (e Portas)](#1)
-2. [Pré‑requisitos e Preparação](#2)
+2. [Pré-requisitos e Preparação](#2)
 3. [Instalação do Krill (APT NLnet Labs)](#3)
 4. [Configuração do Krill (`/etc/krill.conf`)](#4)
 5. [Configurando o Acesso à Interface do Krill](#5)
@@ -21,20 +21,20 @@ A ideia aqui é deixar a CA RPKI operando de forma previsível, com acesso por *
 7. [Configurar CA + Parent (Exemplo: Registro.br)](#7)
 8. [Configurar Repository/Publicação (Repository)](#8)
 9. [Criar ROAs (Boas Práticas e Validação)](#9)
-10. [ASPA (Autonomous System Provider Authorization) — Opcional](#10)
-11. [Garantindo a Estabilidade Pós-Reboot (Systemd)](#11)
+10. [ASPA (Autonomous System Provider Authorization) - Opcional](#10)
+11. [Garantindo a Estabilidade Pós-reboot (Systemd)](#11)
 12. [Opcional: Publicação Própria (RRDP/rsync)](#12)
 13. [Monitoramento e Troubleshooting](#13)
 14. [Backup e Recuperação](#14)
-15. [Opcional: Multi‑user (Usuários Nomeados)](#15)
+15. [Opcional: Multi-user (Usuários Nomeados)](#15)
 16. [Checklist Final](#16)
-17. [O que NÃO Fazer (Erros Comuns)](#17)
+17. [O que não fazer (erros comuns)](#17)
 18. [Referências](#18)
 
 ---
 
 <a id="1"></a>
-## 1) Arquitetura Recomendada e Portas
+## 1. Arquitetura Recomendada e Portas
 
 ### 1.1 Dois Modelos Seguros (Escolha 1)
 
@@ -46,13 +46,13 @@ A ideia aqui é deixar a CA RPKI operando de forma previsível, com acesso por *
 **Modelo B (Produção com Acesso Remoto por HTTPS):**
 - O Krill escuta em `localhost:3000`.
 - O Nginx atua como proxy reverso, expondo a porta `443/tcp` com um certificado TLS válido (obtido via Let’s Encrypt).
-- O firewall abre as portas `22/tcp`, `80/tcp` e `443/tcp`. A porta `80` é necessária para a renovação HTTP‑01 do Certbot.
+- O firewall abre as portas `22/tcp`, `80/tcp` e `443/tcp`. A porta `80` é necessária para a renovação HTTP-01 do Certbot.
 
 > **Dica:** Mesmo no Modelo B, considere fortemente restringir o acesso à porta `443/tcp` por IP ou VPN, pois a interface web do Krill é uma ferramenta **administrativa** sensível.
 
 ### 1.2 Portas (o Mínimo Essencial)
 - `22/tcp`: Acesso SSH para administração do servidor.
-- `80/tcp`: HTTP, **somente** para o desafio de validação do Let’s Encrypt (HTTP‑01) e redirecionamento para HTTPS.
+- `80/tcp`: HTTP, **somente** para o desafio de validação do Let’s Encrypt (HTTP-01) e redirecionamento para HTTPS.
 - `443/tcp`: HTTPS, para a interface web do Krill (atrás do Nginx) e/ou para o serviço RRDP, se você optar por publicar seus certificados via HTTPS.
 - `3000/tcp`: Porta interna do Krill (**somente local**, não deve ser exposta diretamente no firewall para a internet).
 - `873/tcp`: rsync (**apenas se** você optar por publicar seus certificados via `rsync://...`).
@@ -60,7 +60,7 @@ A ideia aqui é deixar a CA RPKI operando de forma previsível, com acesso por *
 ---
 
 <a id="2"></a>
-## 2) Pré‑requisitos e Preparação
+## 2. Pré-requisitos e Preparação
 
 ### 2.1 Requisitos Mínimos
 - Sistema Operacional: Debian **13 (Trixie)**.
@@ -92,7 +92,7 @@ Se você quiser um passo a passo completo só para NTP, veja também: [guia de p
 ---
 
 <a id="3"></a>
-## 3) Instalação do Krill (APT NLnet Labs)
+## 3. Instalação do Krill (APT NLnet Labs)
 
 Vamos adicionar o repositório oficial do NLnet Labs para obter a versão mais recente do Krill.
 
@@ -137,7 +137,7 @@ sudo journalctl -u krill -n 100 --no-pager # Exibe as últimas 100 linhas de log
 ---
 
 <a id="4"></a>
-## 4) Configuração do Krill (`/etc/krill.conf`)
+## 4. Configuração do Krill (`/etc/krill.conf`)
 
 O arquivo de configuração principal do Krill é `/etc/krill.conf`. Vamos editá-lo para ajustá-lo ao ambiente de produção.
 
@@ -186,9 +186,15 @@ storage_uri = "/var/lib/krill/data/"
 ip = "127.0.0.1"
 port = 3000
 
-# URL público FINAL do serviço Krill (DEVE terminar com /)
-# Se você ainda está em laboratório ou usando só SSH tunnel, o padrão localhost pode servir temporariamente.
-# Para Parent/Repository externos, ajuste para a URI pública final.
+# URL pública base do serviço Krill.
+#
+# Para uso simples como CA própria, com Parent/Repository remoto do RIR/NIR
+# e acesso administrativo via SSH tunnel ou Nginx, o padrão localhost pode ser suficiente.
+#
+# Ajuste para uma URI pública válida principalmente se esta instância também atuar como
+# Parent CA ou Publication Server acessível por outras CAs.
+#
+# Deve terminar com /.
 service_uri = "https://rpki.seudominio.com/"
 
 # Token de administrador (mantenha forte e NÃO compartilhe)
@@ -207,9 +213,10 @@ admin_token = "COLE_UM_TOKEN_FORTE_AQUI" # Substitua pelo token gerado ou um nov
 > Neste desenho, o Krill fica em `http://127.0.0.1:3000` e o HTTPS público termina no Nginx.
 
 > **Reforço sobre `service_uri`:**
-> - em instalação padrão do `0.16.0`, o Krill pode subir usando `https://localhost:3000/`
-> - isso é suficiente para laboratório e acesso só por SSH tunnel
-> - se o Krill for falar com Parent/Repository externos, aí sim ajuste para uma URI pública válida
+> - em instalação padrão do `0.16.0`, o Krill pode usar `https://localhost:3000/`
+> - isso pode ser suficiente quando você usa o Krill apenas como sua própria CA e faz acesso administrativo por SSH tunnel ou Nginx
+> - não é obrigatório mudar `service_uri` só porque a interface/API administrativa está atrás de proxy reverso
+> - ajuste para uma URI pública válida principalmente se esta instância atuar como Parent CA ou Publication Server para outras CAs
 > - **deve terminar com uma barra (`/`)**
 
 Para gerar um novo token forte (se você quiser trocar o padrão):
@@ -244,7 +251,7 @@ sudo journalctl -u krill -n 50 --no-pager # Verifica os logs após o reinício p
 ---
 
 <a id="5"></a>
-## 5) Configurando o Acesso à Interface do Krill
+## 5. Configurando o Acesso à Interface do Krill
 
 A interface web do Krill é uma ferramenta administrativa. É fundamental configurá-la para acesso seguro. Apresentamos duas opções, escolha a que melhor se adapta ao seu cenário.
 
@@ -318,16 +325,20 @@ server {
 ```
 
 Ativar a configuração e validar:
+
 ```bash
-sudo rm -f /etc/nginx/sites-enabled/default # Remove a configuração padrão do Nginx
-sudo ln -s /etc/nginx/sites-available/krill /etc/nginx/sites-enabled/krill # Ativa a nova configuração
-sudo nginx -t                             # Testa a sintaxe da configuração do Nginx
-sudo systemctl reload nginx               # Recarrega o Nginx para aplicar as mudanças
+if [ -e /etc/nginx/sites-enabled/default ] || [ -L /etc/nginx/sites-enabled/default ]; then
+  sudo mv -v /etc/nginx/sites-enabled/default "/etc/nginx/sites-enabled/default.disabled.$(date +%F_%H%M%S)"
+fi
+
+sudo ln -s /etc/nginx/sites-available/krill /etc/nginx/sites-enabled/krill
+sudo nginx -t
+sudo systemctl reload nginx
 ```
 
 > **Nota:** Antes de configurar o HTTPS, o redirecionamento para `https://` pode "quebrar" no navegador, pois a porta 443 ainda não estará configurada. Isso é um comportamento esperado.
 
-#### 5.2.4 Emitir o Certificado TLS (HTTP‑01)
+#### 5.2.4 Emitir o Certificado TLS (HTTP-01)
 
 Agora, com o Nginx pronto para o desafio, podemos emitir o certificado SSL/TLS.
 
@@ -376,26 +387,27 @@ server {
     # Configurações TLS básicas e seguras
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers on;
-    ssl_ciphers "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384";
+    ssl_ciphers "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384";
     ssl_session_cache shared:SSL:10m;
     ssl_session_timeout 1h;
     ssl_session_tickets off;
-    ssl_dhparam /etc/nginx/dhparam.pem; # Gerar com `sudo openssl dhparam -out /etc/nginx/dhparam.pem 2048`
 
-    # HSTS (HTTP Strict Transport Security) 
-    # Use includeSubDomains APENAS se TODOS os subdomínios forem HTTPS
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    # HSTS (HTTP Strict Transport Security)
+    # Evite includeSubDomains por padrão; use apenas se todos os subdomínios forem HTTPS.
+    add_header Strict-Transport-Security "max-age=31536000" always;
     add_header X-Frame-Options "DENY" always;
     add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
     add_header Referrer-Policy "no-referrer-when-downgrade" always;
 
     client_max_body_size 100M; # Limite para uploads (se houver)
 
-    # Bloqueia o acesso ao endpoint /metrics do Krill
-    location /metrics {
-        deny all;
-        return 404; # Retorna Not Found para qualquer tentativa de acesso
+    # Bloqueia endpoints de monitoramento/estatísticas no acesso público
+    location = /metrics {
+        return 404;
+    }
+
+    location ^~ /stats/ {
+        return 404;
     }
 
     location / {
@@ -434,7 +446,7 @@ Expor a interface web do Krill via internet, mesmo com HTTPS, significa expor um
 ---
 
 <a id="6"></a>
-## 6) Firewall Obrigatório: nftables (Modelo Pronto)
+## 6. Firewall Obrigatório: nftables (Modelo Pronto)
 
 Um firewall bem configurado é essencial para a segurança do seu servidor Krill. Utilizaremos o `nftables`, o substituto moderno do `iptables`.
 
@@ -445,7 +457,7 @@ sudo apt install -y nftables       # Instala o pacote nftables
 sudo systemctl enable --now nftables # Habilita e inicia o serviço nftables
 ```
 
-### 6.2 Regras Básicas (SSH + HTTP/HTTPS) — Com Opção de Restringir SSH
+### 6.2 Regras básicas (SSH + HTTP/HTTPS) com restrição de origem
 
 O arquivo de configuração do `nftables` é `/etc/nftables.conf`.
 
@@ -454,51 +466,55 @@ sudo nano /etc/nftables.conf # Abre o arquivo de configuração para edição
 ```
 
 Conteúdo do arquivo `/etc/nftables.conf` (modelo base seguro):
+
 ```nft
 #!/usr/sbin/nft -f
-# Limpa todas as regras existentes
+
 flush ruleset
 
-# Define a família de tabelas para IPv4 e IPv6
 table inet filter {
-  # Define a cadeia de entrada (input)
+  set mgmt_v4 {
+    type ipv4_addr; flags interval;
+    elements = { 192.0.2.10/32 }
+  }
+
+  set mgmt_v6 {
+    type ipv6_addr; flags interval;
+    elements = { 2001:db8::10/128 }
+  }
+
   chain input {
-    type filter hook input priority 0; # Garante que esta cadeia seja a primeira a ser processada
-    policy drop;                       # Política padrão: derrubar tudo que não for explicitamente permitido
+    type filter hook input priority 0; policy drop;
 
-    # 1) Permite tráfego na interface de loopback (comunicação interna do servidor)
     iif "lo" accept
-
-    # 2) Permite pacotes de conexões já estabelecidas ou relacionadas (essencial para tráfego de saída e respostas)
+    ct state invalid drop
     ct state established,related accept
 
-    # 3) Permite tráfego ICMP/ICMPv6 (útil para diagnóstico de rede, como ping)
     ip protocol icmp accept
-    ip6 nexthdr icmpv6 accept
+    ip6 nexthdr ipv6-icmp accept
 
-    # 4) Permite acesso SSH na porta 22
-    # Para MAIOR SEGURANÇA, restrinja por IP ou rede. Exemplo:
-    # tcp dport 22 ip saddr 192.0.2.0/24 accept # Apenas a rede 192.0.2.0/24 pode acessar SSH
-    tcp dport 22 accept # Permite SSH de qualquer IP (MENOS SEGURO)
+    # SSH restrito aos IPs/redes de gestão.
+    tcp dport 22 ip saddr @mgmt_v4 accept
+    tcp dport 22 ip6 saddr @mgmt_v6 accept
 
-    # 5) Permite acesso HTTP e HTTPS (se você estiver usando Nginx/Let’s Encrypt)
-    tcp dport { 80, 443 } accept
+    # Porta 80 pública apenas para HTTP-01 do Let's Encrypt e redirecionamento.
+    tcp dport 80 accept
 
-    # 6) Permite acesso rsync (opcional, se você for publicar rsync://...)
-    # Descomente a linha abaixo e ajuste se necessário
+    # Interface administrativa HTTPS restrita à gestão.
+    # Se este mesmo host publicar RRDP público em 443/tcp, ajuste a arquitetura e as regras com cuidado.
+    tcp dport 443 ip saddr @mgmt_v4 accept
+    tcp dport 443 ip6 saddr @mgmt_v6 accept
+
+    # rsync opcional para publicação própria. Libere somente se usar rsync://.
     # tcp dport 873 accept
   }
 
-  # Cadeia de encaminhamento (forward) - normalmente usada para roteadores/gateways
   chain forward {
-    type filter hook forward priority 0;
-    policy drop; # Nenhuma regra para encaminhamento, tudo é derrubado por padrão
+    type filter hook forward priority 0; policy drop;
   }
 
-  # Cadeia de saída (output) - permite todo o tráfego de saída do servidor
   chain output {
-    type filter hook output priority 0;
-    policy accept;
+    type filter hook output priority 0; policy accept;
   }
 }
 ```
@@ -515,7 +531,7 @@ sudo ss -tulpn                 # Lista as portas TCP abertas e os processos asso
 ---
 
 <a id="7"></a>
-## 7) Configurar CA + Parent (Exemplo: Registro.br)
+## 7. Configurar CA + Parent (Exemplo: Registro.br)
 
 Com o Krill rodando e acessível, o próximo passo é configurar sua Autoridade Certificadora (CA) e estabelecer a comunicação com seu Parent (geralmente o seu RIR/NIR, como o Registro.br no Brasil).
 
@@ -536,7 +552,7 @@ Esse comando local já funciona bem na `0.16.0` e ajuda a confirmar rapidamente 
 Se seu Parent for o Registro.br, siga este fluxo:
 
 1)  **No Krill:** Navegue até a seção "Parents" e clique para gerar/copiar o **Child Request XML**.
-2)  **No portal do Registro.br:** Acesse "Titularidade → Seu ASN → Configurar RPKI".
+2)  **No portal do Registro.br:** Acesse "Titularidade > Seu ASN > Configurar RPKI".
 3)  Cole o conteúdo do Child Request XML no campo apropriado e habilite o serviço RPKI.
 4)  Copie o **Parent Response XML** gerado pelo Registro.br.
 5)  **No Krill:** Cole o conteúdo do Parent Response XML na seção "Parents" e confirme a configuração.
@@ -550,7 +566,7 @@ krillc parents refresh --ca isp-exemplo-br
 ---
 
 <a id="8"></a>
-## 8) Configurar Repository/Publicação (Repository)
+## 8. Configurar Repository/Publicação (Repository)
 
 A forma como seus ROAs serão publicados para o mundo é através de um repositório. A melhor prática é utilizar a **publicação remota** (Hosted Publication), se ela for oferecida pelo seu RIR/NIR.
 
@@ -562,7 +578,7 @@ A forma como seus ROAs serão publicados para o mundo é através de um reposit�
 --- 
 
 <a id="9"></a>
-## 9) Criar ROAs (Boas Práticas e Validação)
+## 9. Criar ROAs (Boas Práticas e Validação)
 
 Os ROAs (Route Origin Authorizations) são a peça central do RPKI, autorizando quais ASNs (Autonomous System Numbers) podem anunciar quais prefixos IP.
 
@@ -586,60 +602,122 @@ Após criar seus ROAs no Krill, é **fundamental** verificar se eles estão send
 ---
 
 <a id="10"></a>
-## 10) ASPA (Autonomous System Provider Authorization) — Opcional
+## 10. ASPA (Autonomous System Provider Authorization) - Opcional
 
 #### PRODUÇÃO AVANÇADA
 
-Enquanto os ROAs validam **quem** pode originar um prefixo, o **ASPA** valida **como** esse prefixo transita pela internet. É um objeto RPKI que complementa o ROA, permitindo a validação de relacionamentos cliente-provedor no `AS-Path` para prevenir sequestros de rotas e vazamentos de trânsito (route leaks).
+Enquanto os ROAs validam **quem** pode originar um prefixo, o **ASPA** ajuda a validar **como** esse prefixo aparece no caminho AS da internet. Ele descreve quais ASNs podem aparecer como provedores diretos do seu ASN, reduzindo risco de vazamento de rota e alguns cenários de hijack por caminho inválido.
 
-> **Analogia Rápida:**
-> - **ROA diz:** "O prefixo `192.0.2.0/24` só pode ser anunciado pelo `AS65530`."
-> - **ASPA diz:** "O `AS65530` (ASN do exemplo) só deve ser visto na internet através dos provedores de trânsito `AS65531` e `AS65532`."
+> **Importante:** ASPA ainda é um recurso novo no ecossistema RPKI. Mesmo com suporte no Krill, a validação e a visibilidade podem variar entre validadores, roteadores e ferramentas externas. Trate como mudança de roteamento: revise antes, documente o motivo e acompanhe depois.
 
-### ASPA via Interface Web
+### 10.1 ASPA pela interface web
 
-As versões atuais do Krill já oferecem suporte à criação, edição e remoção de ASPAs diretamente pela interface web.
+No Krill 0.16.0, a interface pode apresentar a aba **ASPAs** dentro da CA. No ambiente validado, o caminho foi:
 
-A configuração pode ser feita acessando:
-`CA` → `ASPAs` → `Add ASPA`
+```text
+CA > ASPAs > Add ASPA
+```
 
-> **Nota:** a documentação do Krill já contempla esse suporte nas versões atuais, mas vale sempre conferir a versão instalada quando você estiver comparando interface, CLI e exemplos mais antigos.
+Na tela, o Krill lista:
 
-### Passos Práticos
+- **Customer ASN:** o ASN cliente, normalmente o seu ASN;
+- **Providers ASNs:** os ASNs que podem aparecer como provedores diretos no AS_PATH.
 
-1.  Acesse a interface web do Krill.
-2.  Entre na sua CA principal (ex: `isp-exemplo-br`).
-3.  No menu lateral, selecione **ASPA**.
-4.  Clique para criar um novo registro ASPA para o seu ASN.
-5.  No campo "Providers", liste **apenas os ASNs dos seus provedores de trânsito (upstreams)**, separados por vírgula. Não inclua ASNs de Pontos de Troca de Tráfego (IXPs) ou de seus clientes.
+Exemplo conceitual:
 
-> **Nota de Segurança (IMPORTANTE):**
-> **ATENÇÃO:** A inclusão incorreta de ASNs como `providers` (por exemplo, adicionar um peer de IXP) pode causar validações negativas no futuro e impactar a visibilidade dos seus prefixos. Use ASPA apenas se tiver certeza absoluta dos seus relacionamentos de trânsito.
+```text
+Customer ASN: 65000
+Providers ASNs: 65001, 65002, 65003
+```
 
-> **ATENÇÃO:** **ASPA e Mitigação DDoS com Túneis (GRE/IPsec/etc.)**
->
-> É fundamental compreender que o ASPA (AS Provider Authorization) avalia exclusivamente o ASN imediatamente adjacente no atributo AS_PATH.
->
-> A presença de túneis (GRE, GRE6, IPsec, VXLAN), bem como o uso de sessões BGP multihop, não altera o funcionamento do ASPA, pois esses mecanismos fazem parte apenas da camada de transporte e não influenciam a topologia lógica do BGP.
->
-> Serviços de mitigação DDoS (scrubbing centers) devem ser incluídos no objeto ASPA sempre que houver uma sessão BGP direta com o mitigador, de forma que o ASN do mitigador possa aparecer imediatamente acima do seu ASN no AS_PATH.
->
-> Isso se aplica mesmo quando a comunicação ocorre por túneis ou multihop, e mesmo que os anúncios de prefixos sejam temporários ou realizados apenas durante eventos de ataque.
->
-> Por outro lado, mitigadores que não aparecem como ASN adjacente no AS_PATH, por exemplo, quando operam atrás de um upstream ou por mecanismos transparentes, não devem ser incluídos no ASPA.
+Use a interface quando ela estiver disponível no seu Krill. Se a sua instalação não mostrar a aba **ASPAs**, use a CLI conforme a seção abaixo.
 
-### Validando seu Objeto ASPA Externamente
+### 10.2 ASPA pela CLI
 
-Após criar seu objeto ASPA, é fundamental verificar se ele está sendo propagado e validado corretamente na internet. Você pode usar validadores externos para confirmar:
+A documentação estável do Krill também mostra o gerenciamento de ASPA pela CLI. A notação é:
 
--   **NLnet Labs RPKI Tools:** Ferramentas online para inspecionar objetos RPKI.
--   **RIPE NCC RPKI Validator:** Validador online do RIPE NCC.
--   **Cloudflare Radar:** Permite inspecionar dados de RPKI para ASNs específicos.
+```text
+AS65000 => AS65001, AS65002(v4), AS65003(v6)
+```
+
+No exemplo:
+
+- `AS65000` é o ASN cliente, ou seja, o seu ASN;
+- `AS65001` é um provedor válido para IPv4 e IPv6;
+- `AS65002(v4)` é provedor apenas para IPv4;
+- `AS65003(v6)` é provedor apenas para IPv6.
+
+Se você quiser declarar explicitamente que um ASN não tem provedores:
+
+```text
+AS65000 => <none>
+```
+
+Criar uma configuração ASPA:
+
+```bash
+krillc aspas add --aspa "AS65000 => AS65001, AS65002(v4), AS65003(v6)"
+```
+
+Listar configurações ASPA existentes:
+
+```bash
+krillc aspas list
+```
+
+Listar em JSON, útil para auditoria ou registro em chamado:
+
+```bash
+krillc aspas list --format json
+```
+
+Adicionar e remover provedores de um ASN cliente:
+
+```bash
+krillc aspas update --customer AS65000 --add "AS65005" --remove "AS65001"
+```
+
+Remover a configuração ASPA de um ASN cliente:
+
+```bash
+krillc aspas remove --customer AS65000
+```
+
+> **Atenção:** O Krill permite apenas uma configuração ASPA por ASN cliente. Se precisar alterar a lista de provedores, atualize a configuração existente em vez de criar outra.
+
+### 10.3 Cuidados em provedor
+
+Liste **apenas os ASNs que podem aparecer como provedores diretos do seu ASN no AS_PATH**. Não inclua automaticamente:
+
+- ASNs de clientes;
+- ASNs de IXPs;
+- peers de troca de tráfego que não são trânsito;
+- ASNs que aparecem no caminho, mas não são adjacentes diretos ao seu ASN.
+
+> **Atenção:** A inclusão incorreta de ASNs como provedores pode causar validações negativas quando a adoção de ASPA estiver mais ampla. Em produção, trate ASPA como mudança de roteamento: revise com calma, valide os relacionamentos BGP e documente o motivo de cada ASN incluído.
+
+### 10.4 ASPA e mitigação DDoS com túneis
+
+ASPA avalia a relação de ASN no AS_PATH, não o transporte usado para fechar a sessão BGP.
+
+Túneis GRE, GRE6, IPsec, VXLAN e sessões BGP multihop não mudam essa lógica. Se um mitigador DDoS ou scrubbing center aparece como ASN adjacente ao seu ASN no AS_PATH, ele deve ser considerado na análise do ASPA, mesmo que a sessão passe por túnel ou só seja usada durante eventos de ataque.
+
+Por outro lado, mitigadores que não aparecem como ASN adjacente no AS_PATH, por exemplo quando operam por trás de um upstream ou por mecanismo transparente, não devem ser incluídos automaticamente.
+
+### 10.5 Validação externa
+
+Depois de criar ou alterar ASPA, acompanhe a propagação e o suporte nos validadores que você usa. Como o recurso ainda é novo, a validação pode variar entre ferramentas.
+
+Boas fontes para acompanhar:
+
+- documentação do Krill sobre ASPA;
+- RIPE NCC e ARIN, quando o assunto for suporte operacional nos RIRs;
+- validadores RPKI que já exponham dados ou alertas de ASPA.
 
 ---
 
 <a id="11"></a>
-## 11) Garantindo a Estabilidade Pós-Reboot (Systemd)
+## 11. Garantindo a Estabilidade Pós-reboot (Systemd)
 
 Um problema comum em ambientes de produção é o Krill falhar ao publicar ROAs após uma reinicialização do servidor. Isso acontece porque o serviço do Krill pode iniciar *antes* que a rede, o DNS ou a stack TLS estejam completamente operacionais, mesmo que segundos depois tudo se normalize.
 
@@ -684,7 +762,7 @@ Com essa configuração, o Krill agora iniciará de forma robusta após cada reb
 ---
 
 <a id="12"></a>
-## 12) Opcional: Publicação Própria (RRDP/rsync)
+## 12. Opcional: Publicação Própria (RRDP/rsync)
 
 Esta seção é para casos específicos onde a publicação remota não está disponível ou sua arquitetura exige que você hospede seu próprio repositório de RPKI.
 
@@ -713,7 +791,7 @@ Esta seção é para casos específicos onde a publicação remota não está di
 ---
 
 <a id="13"></a>
-## 13) Monitoramento e Troubleshooting
+## 13. Monitoramento e Troubleshooting
 
 ### 13.1 Logs do Serviço Krill
 Os logs são a primeira fonte de informação para diagnosticar problemas.
@@ -734,7 +812,7 @@ curl http://127.0.0.1:3000/metrics | head
 # curl -k https://127.0.0.1:3000/metrics | head
 ```
 
-> **Atenção:** O endpoint `/metrics` do Krill **não** possui autenticação. Ele **NÃO** deve ser exposto publicamente na internet. Se você estiver usando Nginx como proxy, certifique-se de que o Nginx está configurado para **bloquear** o acesso externo a `/metrics`, como mostrado na seção [5.2.5 Configurar o Proxy HTTPS para o Krill](#5.2.5).
+> **Atenção:** os endpoints `/metrics` e `/stats/` do Krill expõem informações de monitoramento/estatísticas e não devem ficar públicos na internet. Se você estiver usando Nginx como proxy, certifique-se de que o Nginx bloqueia o acesso externo a esses caminhos, como mostrado na seção [5.2.5 Configurar o Proxy HTTPS para o Krill](#5.2.5).
 
 ### 13.3 Problemas Comuns e Soluções
 
@@ -753,7 +831,7 @@ curl http://127.0.0.1:3000/metrics | head
 ---
 
 <a id="14"></a>
-## 14) Backup e Recuperação
+## 14. Backup e Recuperação
 
 A perda dos dados do Krill pode resultar na perda da sua CA RPKI e, consequentemente, na invalidação dos seus ROAs. **Um backup regular e seguro é indispensável.**
 
@@ -767,35 +845,29 @@ A perda dos dados do Krill pode resultar na perda da sua CA RPKI e, consequentem
 
 ### 14.2 Script simples de backup com retenção
 
-Crie um script para automatizar o backup diário com retenção de 30 dias.
-
-Arquivo: `/usr/local/sbin/backup-krill.sh`
+Crie o script `/usr/local/sbin/backup-krill.sh` para automatizar o backup diário com retenção de 30 dias.
 
 ```bash
-sudo nano /usr/local/sbin/backup-krill.sh # Cria o script de backup
-```
-
-Conteúdo do script:
-```bash
+sudo tee /usr/local/sbin/backup-krill.sh >/dev/null <<'EOF'
 #!/usr/bin/env bash
-set -euo pipefail # Sai imediatamente se um comando falhar, evita variáveis não definidas
-umask 077         # Garante que arquivos criados tenham permissões restritivas
+set -euo pipefail
+umask 077
 
-BACKUP_DIR="/var/backups/krill"       # Diretório onde os backups serão salvos
-DATE="$(date +%Y%m%d-%H%M)"           # Formato da data para o nome do arquivo de backup
-RETENTION_DAYS="30"                   # Número de dias para manter os backups
+BACKUP_DIR="/var/backups/krill"
+DATE="$(date +%Y%m%d-%H%M)"
+RETENTION_DAYS="30"
 
-mkdir -p "$BACKUP_DIR"                # Cria o diretório de backup se não existir
-chmod 700 "$BACKUP_DIR"               # Define permissões restritivas para o diretório de backup
+mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
 
-# Cria um arquivo tar.gz com os arquivos e diretórios essenciais
 tar -czf "$BACKUP_DIR/krill-backup-$DATE.tar.gz" \
   /etc/krill.conf \
   /var/lib/krill/data/
 
-# Remove backups antigos baseados na RETENTION_DAYS
 find "$BACKUP_DIR" -type f -name "krill-backup-*.tar.gz" -mtime +"$RETENTION_DAYS" -delete
+
 echo "OK: Backup do Krill criado em $BACKUP_DIR/krill-backup-$DATE.tar.gz"
+EOF
 ```
 
 Defina as permissões de execução para o script:
@@ -848,7 +920,7 @@ Ative:
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now krill-backup.timer
-systemctl list-timers | grep krill-backup
+systemctl list-timers krill-backup.timer
 ```
 
 ### 14.3 Restauração do backup
@@ -881,7 +953,7 @@ Em caso de desastre, siga estes passos para restaurar:
 ---
 
 <a id="15"></a>
-## 15) Opcional: Multi‑user (Usuários Nomeados)
+## 15. Opcional: Multi-user (Usuários Nomeados)
 
 Para ambientes maiores, onde múltiplos administradores precisam gerenciar o Krill, é preferível usar autenticação com **usuários nomeados** em vez de compartilhar um único `admin_token`.
 
@@ -929,7 +1001,7 @@ sudo systemctl restart krill # Reinicia o serviço Krill
 ---
 
 <a id="16"></a>
-## 16) Checklist Final
+## 16. Checklist Final
 
 Antes de considerar sua instalação completa, revise estes pontos:
 
@@ -945,15 +1017,15 @@ Antes de considerar sua instalação completa, revise estes pontos:
 ---
 
 <a id="17"></a>
-## 17) O que NÃO Fazer (Erros Comuns a Evitar)
+## 17. O que não fazer (erros comuns a evitar)
 
-Este é um resumo rápido de práticas que **DEVEM SER EVITADAS** para garantir a segurança e funcionalidade da sua infraestrutura RPKI com Krill.
+Este é um resumo rápido de práticas que **devem ser evitadas** para garantir a segurança e funcionalidade da sua infraestrutura RPKI com Krill.
 
 -   **Não Expor a Porta 3000/tcp Diretamente:** A porta padrão do Krill (`3000/tcp`) é para acesso local. Nunca abra esta porta diretamente no firewall para a internet.
 -   **Não Usar HTTP Público para a UI:** Jamais exponha a interface web do Krill via HTTP (porta 80) publicamente. Sempre use HTTPS (porta 443) e, idealmente, um proxy reverso.
 -   **Não Esquecer o Backup:** A perda do conteúdo definido em `storage_uri` ou do `krill.conf` significa a perda da sua CA RPKI. Faça backups criptografados e fora do servidor.
 -   **Não Definir `maxLength` Incorretamente:** Um `maxLength` muito amplo pode diluir a proteção do seu ROA. Se você anuncia um `/24`, use `maxLength = 24`.
--   **Não Expor o Endpoint `/metrics`:** O endpoint `/metrics` não tem autenticação. Bloqueie o acesso público a ele via Nginx ou firewall.
+-   **Não Expor Endpoints de Monitoramento:** Os endpoints `/metrics` e `/stats/` não devem ficar públicos. Bloqueie o acesso externo via Nginx ou firewall.
 -   **Não Migrar o Servidor sem o `storage_uri` e o `krill.conf`:** A migração de um Krill requer que todo o estado (configuração e dados) seja movido. Não negligencie isso.
 -   **Não Ignorar a Sincronização de Tempo:** A validade dos certificados RPKI depende de um relógio de sistema preciso. Garanta que o Chrony (ou outro serviço NTP) esteja funcionando.
 -   **Não Incluir ASNs Incorretos no ASPA:** Adicionar ASNs que não são seus provedores de trânsito (ex: IXPs, clientes) na configuração ASPA pode causar validações negativas.
@@ -961,21 +1033,25 @@ Este é um resumo rápido de práticas que **DEVEM SER EVITADAS** para garantir 
 ---
 
 <a id="18"></a>
-## 18) Referências (fontes para consulta)
+## 18. Referências (fontes para consulta)
 
 ### Krill (NLnet Labs)
 
 - Documentação (stable): https://krill.docs.nlnetlabs.nl/en/stable/
 - Instalar e executar: https://krill.docs.nlnetlabs.nl/en/stable/install-and-run.html
+- Opções de configuração: https://krill.docs.nlnetlabs.nl/en/stable/config.html
 - Interações com Parent/RIR/NIR: https://krill.docs.nlnetlabs.nl/en/stable/parent-interactions.html
+- ASPA no Krill: https://krill.docs.nlnetlabs.nl/en/stable/manage-aspas.html
+- Monitoramento: https://krill.docs.nlnetlabs.nl/en/stable/monitoring.html
 - Múltiplos usuários: https://krill.docs.nlnetlabs.nl/en/stable/multi-user.html
 
-### RFCs (RPKI)
+### RFCs e drafts (RPKI)
 
 - ROA (RFC 6482): https://www.rfc-editor.org/rfc/rfc6482.html
 - Provisioning Protocol (RFC 6492): https://www.rfc-editor.org/rfc/rfc6492.html
 - Publication Protocol (RFC 8181): https://www.rfc-editor.org/rfc/rfc8181.html
-- ASPA (RFC 9319): https://www.rfc-editor.org/rfc/rfc9319.html
+- RFC 9319 - uso de maxLength em ROAs: https://www.rfc-editor.org/rfc/rfc9319.html
+- ASPA Profile (draft IETF SIDROPS): https://datatracker.ietf.org/doc/draft-ietf-sidrops-aspa-profile/
 
 ---
 
