@@ -1,11 +1,11 @@
 # Guia de Produção: Wazuh AIO para provedores no Debian 13
 
 *Criado em: 18 de dezembro de 2025*  
-*Última atualização em: 01 de abril de 2026*
+*Última atualização em: 21 de maio de 2026*
 
 Wazuh em arquitetura All-in-One pode resolver bem quando a operação ainda está concentrada, mas ele precisa nascer com alguma folga e com o mínimo de organização para não virar dor de cabeça rápido. Este guia registra uma instalação do Wazuh no **Debian 13**, pensando em provedor pequeno ou médio, com múltiplos servidores Linux e integração com **MikroTik** via syslog.
 
-O foco aqui é deixar uma base funcional para produção: instalação, pós-instalação essencial, agentes, retenção, backup e um mínimo de endurecimento com `nftables`. Não é um desenho de cluster distribuído nem de SIEM para grande volume; é uma base AIO organizada para começar direito e crescer com menos improviso. Os exemplos abaixo seguem a linha do **Wazuh 4.14.4**.
+O foco aqui é deixar uma base funcional para produção: instalação, pós-instalação essencial, agentes, retenção, backup e um mínimo de endurecimento com `nftables`. Não é um desenho de cluster distribuído nem de SIEM para grande volume; é uma base AIO organizada para começar direito e crescer com menos improviso. Os exemplos abaixo seguem a linha do **Wazuh 4.14.x**, com referências atualizadas para a versão **4.14.5**.
 
 ---
 
@@ -13,13 +13,13 @@ O foco aqui é deixar uma base funcional para produção: instalação, pós-ins
 1. [Dimensionamento rápido](#1)
 2. [Preparação do Debian 13 (Trixie) minimal](#2)
 3. [Decisões de Segurança Adotadas](#3)
-4. [Instalação Wazuh 4.14.4 (All-in-One)](#4)
+4. [Instalação Wazuh 4.14.x (All-in-One)](#4)
 5. [Pós-instalação essencial](#5)
 6. [Configurando Agentes](#6)
    - [Agente Debian 12/13](#6.1)
    - [Agente AlmaLinux + cPanel](#6.2)
 7. [Integração MikroTik (Syslog)](#7)
-8. [Retenção de logs (90 dias – ISM/ILM)](#8)
+8. [Retenção de logs (90 dias - ISM/ILM)](#8)
 9. [Backup diário simples](#9)
 10. [Saúde e troubleshooting](#10)
 11. [Checklist final](#11)
@@ -33,13 +33,13 @@ O foco aqui é deixar uma base funcional para produção: instalação, pós-ins
 
 Dimensionar corretamente é o primeiro passo para o sucesso. Considere estes números:
 
--   **Hardware mínimo AIO (1–25 agentes):** 4 vCPU, 8 GB RAM, 50 GB SSD.
--   **Para este cenário (~15 agentes):** recomendação de **6–8 vCPU, 12–16 GB RAM, 150 GB NVMe** para ter conforto e folga.
--   **Indexer (por nó):** A recomendação oficial é 16 GB RAM / 8 cores; o mínimo aceitável é 4 GB / 2 cores.
+-   **Hardware mínimo AIO (1 a 25 agentes):** 4 vCPU, 8 GB RAM, 50 GB SSD.
+-   **Para este cenário (~15 agentes):** recomendação de **6 a 8 vCPU, 12 a 16 GB RAM, 150 GB NVMe** para ter conforto e folga.
+-   **Indexer (por nó):** A recomendação oficial é 16 GB RAM / 8 cores; o mínimo aceitável é 4 GB / 2 cores.
 -   **Armazenamento (90 dias de retenção para o Indexer):**
-    -   Servidor/agente Linux: ~3,7 GB
-    -   Dispositivo de rede: ~7,4 GB
-    -   Exemplo: 15 servidores → 55,5 GB; 4 MikroTik → 29,6 GB. Total ~85 GB. Adicione 20% de folga, chegando a aproximadamente **105 GB** somente para os índices.
+    -   Servidor/agente Linux: ~3,7 GB
+    -   Dispositivo de rede: ~7,4 GB
+    -   Exemplo: 15 servidores: 55,5 GB; 4 MikroTik: 29,6 GB. Total ~85 GB. Adicione 20% de folga, chegando a aproximadamente **105 GB** somente para os índices.
 
 ---
 
@@ -50,7 +50,8 @@ Vamos preparar o sistema operacional para receber o Wazuh, garantindo estabilida
 
 1.  **Atualize base e instale utilitários essenciais:**
     ```bash
-    sudo apt update && sudo apt full-upgrade -y
+    sudo apt update
+    sudo apt full-upgrade -y
     # No Debian 13, o APT já suporta HTTPS nativamente (não precisa instalar apt-transport-https).
     sudo apt install -y curl wget gnupg ca-certificates lsb-release nftables sudo vim htop net-tools rsync
     ```
@@ -59,7 +60,7 @@ Vamos preparar o sistema operacional para receber o Wazuh, garantindo estabilida
     sudo hostnamectl set-hostname wazuh-isp
     echo "127.0.1.1 wazuh-isp" | sudo tee -a /etc/hosts
     ```
-3.  **Configure o firewall (nftables) — simples, stateful e “server-first”:**
+3.  **Configure o firewall (nftables) - simples, stateful e “server-first”:**
 
     Este modelo segue o padrão de hardening adotado nos outros guias do repositório:
     - política padrão **DROP** no `input`;
@@ -189,7 +190,7 @@ Vamos preparar o sistema operacional para receber o Wazuh, garantindo estabilida
     ```
 4.  **Ajuste Sysctl e limites:**
     ```bash
-    sudo cat >/etc/sysctl.d/90-wazuh.conf <<'EOF'
+    sudo tee /etc/sysctl.d/90-wazuh.conf >/dev/null <<'EOF'
     vm.max_map_count=262144
     vm.swappiness=10
     fs.file-max=2097152
@@ -205,10 +206,12 @@ Vamos preparar o sistema operacional para receber o Wazuh, garantindo estabilida
     * soft nproc 65536
     * hard nproc 65536
     ```
-5.  **Configure Swap (se sua RAM for < 16 GB):**
+5.  **Configure Swap (se sua RAM for < 16 GB):**
     ```bash
     sudo fallocate -l 4G /swapfile
-    sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
+    sudo chmod 600 /swapfile
+    sudo mkswap /swapfile
+    sudo swapon /swapfile
     echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
     ```
 
@@ -222,40 +225,50 @@ Este guia não foca apenas na instalação, mas em uma implementação segura de
 -   **Firewall por padrão (DROP) e stateful:** O `nftables` aplica política padrão de negar tráfego de entrada, aceitando `established,related` e liberando apenas portas estritamente necessárias.
 -   **Restrição de portas de gerenciamento:** SSH e Dashboard ficam restritos às redes de gestão (`mgmt_v4/mgmt_v6` no `nftables.conf`).
 -   **Restrição do onboarding de agentes:** a porta `1515/tcp` deve ser aberta apenas durante o onboarding e/ou restrita a redes específicas (`agents_v4/agents_v6` no `nftables.conf`).
--   **Comunicação Interna Segura:** A porta `55000/tcp` (Filebeat para Indexer) não foi aberta no firewall, pois em uma arquitetura AIO a comunicação é local e não deve ser exposta externamente.
+-   **Comunicação Interna Segura:** A porta `55000/tcp` corresponde à API REST do Wazuh Server. Em uma arquitetura AIO, o Dashboard consulta essa API localmente, então ela não precisa ser exposta externamente no firewall. Se algum fluxo externo precisar usar a API, libere apenas para IPs de gestão confiáveis. Já a comunicação do Filebeat com o Indexer ocorre pela porta `9200/tcp`, também local no cenário AIO.
 -   **Restrição de Syslog por IP:** A recepção de logs syslog na porta `514/udp` deve ser restrita aos IPs dos roteadores na configuração do Wazuh (`ossec.conf`).
 
 ---
 
 <a id="4"></a>
-## 4. Instalação Wazuh 4.14.4 (All-in-One)
+## 4. Instalação Wazuh 4.14.x (All-in-One)
 
 No Debian 13, o instalador oficial ainda pode mostrar aviso de que o sistema não está na lista de plataformas recomendadas. Mesmo assim, com os recursos mínimos atendidos, o fluxo AIO pode seguir normalmente.
 
 ```bash
-cd /root
-# Baixe o script de instalação oficial
-sudo curl -sO https://packages.wazuh.com/4.14/wazuh-install.sh
-sudo sed -i 's/software-properties-common//g' wazuh-install.sh
-sudo chmod +x wazuh-install.sh
-# Inicie a instalação All-in-One (Manager + Indexer + Dashboard + Filebeat)
-sudo ./wazuh-install.sh -a
+mkdir -p "$HOME/wazuh-install"
+cd "$HOME/wazuh-install"
+curl -sO https://packages.wazuh.com/4.14/wazuh-install.sh
+sudo bash ./wazuh-install.sh -a
 ```
 
 Observações práticas sobre esse instalador no Debian 13:
 
-- ele atualmente baixa a série `4.14.4`
-- ainda mostra aviso de sistema não recomendado
-- exige pelo menos `4 GB RAM` e `2 vCPU`; abaixo disso ele aborta antes de instalar
+- a documentação atual usa a série `4.14` do instalador;
+- os pacotes atuais da série 4.14 estão em `4.14.5-1`;
+- o quickstart oficial lista o AIO como suficiente, em geral, para até 100 endpoints e 90 dias de dados consultáveis;
+- o instalador exige pelo menos `4 GB RAM` e `2 vCPU`; abaixo disso ele aborta antes de instalar.
 
 Se o host estiver abaixo disso e você quiser continuar mesmo assim, o próprio script sugere `-i`. Para produção, o melhor é respeitar os requisitos.
-Ao final, **salve as senhas!** Elas são cruciais.
+
+Ao final, salve as senhas em um cofre. Elas são cruciais.
+
 ```bash
-sudo tar -O -xf wazuh-install-files.tar wazuh-install-files/wazuh-passwords.txt
+sudo tar -O -xvf wazuh-install-files.tar wazuh-install-files/wazuh-passwords.txt
 ```
+
 Anote as senhas do `admin` do Indexer e do `wazuh-wui` (Dashboard).
 
+A própria documentação do Wazuh recomenda desabilitar o repositório após a instalação para evitar upgrades acidentais. No Debian/Ubuntu, faça backup do arquivo e comente a linha `deb`:
+
+```bash
+sudo cp /etc/apt/sources.list.d/wazuh.list "/etc/apt/sources.list.d/wazuh.list.bak.$(date +%F_%H%M%S)"
+sudo nano /etc/apt/sources.list.d/wazuh.list
+sudo apt update
+```
+
 Verifique se todos os serviços estão ativos:
+
 ```bash
 systemctl is-active wazuh-manager wazuh-indexer wazuh-dashboard filebeat
 ```
@@ -265,9 +278,25 @@ systemctl is-active wazuh-manager wazuh-indexer wazuh-dashboard filebeat
 <a id="5"></a>
 ## 5. Pós-instalação essencial
 
--   **Heap do Indexer:** A regra de ouro é definir aproximadamente **50% da RAM** do seu servidor para o Indexer, sem nunca ultrapassar 32GB. Por exemplo, para um servidor com 12GB de RAM, usaríamos 6GB (`6g`):
+-   **Heap do Indexer:** A regra prática é definir aproximadamente **50% da RAM** do servidor para o Indexer, sem ultrapassar 32 GB. Por exemplo, em um servidor com 12 GB de RAM, use `6g`.
+
+    Faça backup antes de alterar:
+
     ```bash
-    sudo sed -i 's/^-Xms.*$/-Xms6g/; s/^-Xmx.*$/-Xmx6g/' /etc/wazuh-indexer/jvm.options
+    sudo cp /etc/wazuh-indexer/jvm.options "/etc/wazuh-indexer/jvm.options.bak.$(date +%F_%H%M%S)"
+    sudo nano /etc/wazuh-indexer/jvm.options
+    ```
+
+    Ajuste as duas linhas abaixo no arquivo:
+
+    ```text
+    -Xms6g
+    -Xmx6g
+    ```
+
+    Depois reinicie o Indexer:
+
+    ```bash
     sudo systemctl restart wazuh-indexer
     ```
 -   **Proteção da configuração:** Faça um backup inicial das configurações.
@@ -315,17 +344,21 @@ RECOMENDADO (primeiro deploy): use o mesmo padrão do Dashboard em **“Deploy n
 (download do `.deb` + `dpkg -i`). Isso evita cenários onde o método via APT não aplica corretamente
 as variáveis no `postinst` e deixa o placeholder `MANAGER_IP` no `ossec.conf` (o agente não inicia).
 
-IMPORTANTE: ajuste a URL/arquivo conforme seu ambiente (versão e arquitetura).
+IMPORTANTE: ajuste a versão e arquitetura conforme seu ambiente. A documentação atual lista `4.14.5-1` para a série 4.14.
+
 ```bash
-wget https://packages.wazuh.com/4.x/apt/pool/main/w/wazuh-agent/wazuh-agent_4.14.4-1_amd64.deb && \
+WAZUH_AGENT_VERSION="4.14.5-1"
+wget "https://packages.wazuh.com/4.x/apt/pool/main/w/wazuh-agent/wazuh-agent_${WAZUH_AGENT_VERSION}_amd64.deb"
 sudo env WAZUH_MANAGER="<IP_DO_MANAGER>" WAZUH_AGENT_GROUP="<NOME_DO_GRUPO>" WAZUH_AGENT_NAME="<NOME_DO_HOST>" \
-dpkg -i ./wazuh-agent_4.14.4-1_amd64.deb
+dpkg -i "./wazuh-agent_${WAZUH_AGENT_VERSION}_amd64.deb"
 ```
 
 Se o `dpkg` reclamar de dependências, corrija e finalize:
+
 ```bash
 sudo apt -y -f install
-sudo dpkg -i ./wazuh-agent_4.14.4-1_amd64.deb
+sudo env WAZUH_MANAGER="<IP_DO_MANAGER>" WAZUH_AGENT_GROUP="<NOME_DO_GRUPO>" WAZUH_AGENT_NAME="<NOME_DO_HOST>" \
+dpkg -i "./wazuh-agent_${WAZUH_AGENT_VERSION}_amd64.deb"
 ```
 
 Atualizações futuras:
@@ -355,7 +388,7 @@ Execute no **servidor AlmaLinux/cPanel a ser monitorado (servidor remoto)**.
 
 ```bash
 sudo rpm --import https://packages.wazuh.com/key/GPG-KEY-WAZUH
-sudo cat >/etc/yum.repos.d/wazuh.repo <<'EOF'
+sudo tee /etc/yum.repos.d/wazuh.repo >/dev/null <<'EOF'
 [wazuh]
 name=Wazuh repository
 baseurl=https://packages.wazuh.com/4.x/yum/
@@ -368,8 +401,9 @@ EOF
 # (instalação via RPM direto). Use `sudo env ...` para garantir que as variáveis cheguem ao postinst.
 #
 # IMPORTANTE: ajuste versão e arquitetura conforme seu ambiente.
+WAZUH_AGENT_VERSION="4.14.5-1"
 sudo env WAZUH_MANAGER="<IP_DO_MANAGER>" WAZUH_AGENT_GROUP="<NOME_DO_GRUPO>" WAZUH_AGENT_NAME="<NOME_DO_HOST>" \
-dnf install -y https://packages.wazuh.com/4.x/yum/wazuh-agent-4.14.4-1.x86_64.rpm
+dnf install -y "https://packages.wazuh.com/4.x/yum/wazuh-agent-${WAZUH_AGENT_VERSION}.x86_64.rpm"
 
 # (Opcional) Se preferir instalar do repositório (sem URL do RPM), use este formato (evita perder variáveis):
 # sudo env WAZUH_MANAGER="<IP_DO_MANAGER>" WAZUH_AGENT_GROUP="<NOME_DO_GRUPO>" WAZUH_AGENT_NAME="<NOME_DO_HOST>" \
@@ -444,7 +478,7 @@ Reinicie o manager: `sudo systemctl restart wazuh-manager`.
 
 Valide se o manager ficou ouvindo em `514/udp`:
 ```bash
-sudo ss -lunp | grep ':514 '
+sudo ss -H -lunp 'sport = :514'
 ```
 
 Se você quiser testar a regra antes de depender do roteador em produção, use o `wazuh-logtest` com um exemplo no formato que o RouterOS envia:
@@ -459,7 +493,7 @@ Apr  1 17:55:29 MikroTik script,info teste de syslog
 
 Para mensagens de autenticação, o próprio Wazuh já costuma reconhecer padrões como `login failure` e `authentication failed` pela regra `2501` (`syslog: User authentication failure`). Exemplo no formato que apareceu no RouterOS durante o teste:
 ```text
-Apr  2 15:52:00 MikroTik login failure for user codex from 192.168.1.12 via ssh
+Apr  2 15:52:00 MikroTik login failure for user usuario_teste from 192.168.1.12 via ssh
 ```
 
 Se você quiser criar regras locais específicas para `firewall`, `account` ou outros eventos do MikroTik, primeiro capture exemplos reais do seu ambiente. No RouterOS, a mesma categoria pode aparecer com formatos diferentes dependendo do tipo de evento.
@@ -467,10 +501,15 @@ Se você quiser criar regras locais específicas para `firewall`, `account` ou o
 ---
 
 <a id="8"></a>
-## 8. Retenção de logs (90 dias – ISM/ILM)
+## 8. Retenção de logs (90 dias - ISM/ILM)
+
+Para evitar deixar a senha do Indexer no histórico do shell, leia a senha em modo silencioso antes do `curl`:
 
 ```bash
-curl -k -u admin:<SENHA_INDEXER_ADMIN> -XPUT "https://localhost:9200/_plugins/_ism/policies/wazuh-90d" \
+read -rsp "Senha do admin do Indexer: " WAZUH_INDEXER_PASS
+printf '\n'
+
+curl -k -u "admin:${WAZUH_INDEXER_PASS}" -XPUT "https://localhost:9200/_plugins/_ism/policies/wazuh-90d" \
   -H 'Content-Type: application/json' -d @- <<'JSON'
 {
   "policy": {
@@ -478,31 +517,45 @@ curl -k -u admin:<SENHA_INDEXER_ADMIN> -XPUT "https://localhost:9200/_plugins/_i
     "default_state": "hot",
     "states": [
       { "name": "hot", "actions": [], "transitions": [
-          { "state_name": "delete", "conditions": { "min_index_age": "90d" } } 
+          { "state_name": "delete", "conditions": { "min_index_age": "90d" } }
       ]},
       { "name": "delete", "actions": [ { "delete": {} } ], "transitions": []}
     ]
   }
 }
 JSON
+
+unset WAZUH_INDEXER_PASS
 ```
-Associe esta política aos índices `wazuh-alerts-*` via Dashboard (Management → Index Management).
+Associe esta política aos índices `wazuh-alerts-*` via Dashboard em **Management > Index Management**.
 
 ---
 
 <a id="9"></a>
 ## 9. Backup diário simples
 
+Este backup cobre configurações principais do Wazuh. Ele não substitui snapshot da VM nem política de backup completa para dados do Indexer.
+
 Crie o script `/usr/local/bin/wazuh-backup.sh`:
+
 ```bash
+sudo tee /usr/local/bin/wazuh-backup.sh >/dev/null <<'EOF'
 #!/bin/bash
-DEST=/backup/wazuh; mkdir -p "$DEST"
-DATE=$(date +%Y%m%d_%H%M%S)
+set -euo pipefail
+
+DEST="/backup/wazuh"
+DATE="$(date +%Y%m%d_%H%M%S)"
+
+mkdir -p "$DEST"
 tar -czf "$DEST/wazuh_cfg_$DATE.tgz" /var/ossec/etc /etc/wazuh-indexer /etc/wazuh-dashboard /etc/filebeat
 find "$DEST" -name "wazuh_cfg_*.tgz" -mtime +30 -delete
+
 echo "Backup concluído em $DEST/wazuh_cfg_$DATE.tgz"
+EOF
 ```
+
 Deixe o script executável:
+
 ```bash
 sudo chmod +x /usr/local/bin/wazuh-backup.sh
 ```
@@ -547,7 +600,7 @@ Ative:
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now wazuh-backup.timer
-systemctl list-timers | grep wazuh-backup
+systemctl list-timers wazuh-backup.timer
 ```
 
 ---
@@ -556,18 +609,22 @@ systemctl list-timers | grep wazuh-backup
 ## 10. Saúde e troubleshooting
 
 Comandos rápidos de diagnóstico:
+
 ```bash
 # Status dos serviços
 systemctl status wazuh-manager wazuh-indexer wazuh-dashboard filebeat
 
-# Saúde do cluster Indexer
-curl -k -u admin:<SENHA_INDEXER_ADMIN> https://localhost:9200/_cluster/health?pretty
+# Saúde do cluster Indexer, sem deixar senha no histórico
+read -rsp "Senha do admin do Indexer: " WAZUH_INDEXER_PASS
+printf '\n'
+curl -k -u "admin:${WAZUH_INDEXER_PASS}" https://localhost:9200/_cluster/health?pretty
+unset WAZUH_INDEXER_PASS
 
 # Agentes conectados e ativos
-/var/ossec/bin/agent_control -l
+sudo /var/ossec/bin/agent_control -l
 
 # Teste de regras de alerta
-/var/ossec/bin/wazuh-logtest
+sudo /var/ossec/bin/wazuh-logtest
 
 # Uso de disco pelo Indexer
 df -h /var/lib/wazuh-indexer
@@ -585,7 +642,7 @@ df -h /var/lib/wazuh-indexer
 -   [ ] Agentes Debian e AlmaLinux registrados e reportando
 -   [ ] Logs MikroTik chegando e gerando alertas
 -   [ ] Política de retenção de 90 dias aplicada
--   [ ] Backup diário configurado e testado
+-   [ ] Backup diário de configuração criado e testado
 
 ---
 
@@ -593,7 +650,7 @@ df -h /var/lib/wazuh-indexer
 ## 12. Notas de produção
 
 -   Promova atualizações de versão do Wazuh (ex: 4.14.x) somente após realizar snapshots/backups completos do servidor.
--   Se a base de agentes crescer (>80–100 agentes), planeje a migração para uma arquitetura de cluster distribuído.
+-   Se a base de agentes crescer para algo acima de 80 a 100 agentes, planeje a migração para uma arquitetura de cluster distribuído.
 -   Priorize versões **estáveis** (stable) e evite RC/beta em produção.
 
 ---
@@ -606,6 +663,8 @@ df -h /var/lib/wazuh-indexer
 - Quickstart: https://documentation.wazuh.com/current/quickstart.html
 - Portal de instalação: https://documentation.wazuh.com/current/installation-guide/index.html
 - Assistente de instalação (`wazuh-install.sh`): https://documentation.wazuh.com/current/installation-guide/wazuh-indexer/installation-assistant.html
+- Lista de pacotes oficiais: https://documentation.wazuh.com/current/installation-guide/packages-list.html
+- Release notes 4.14.5: https://documentation.wazuh.com/current/release-notes/release-4-14-5.html
 - Arquitetura e portas padrão (4.x): https://documentation.wazuh.com/current/getting-started/components/wazuh-server.html
 - Requisitos e portas (firewall): https://documentation.wazuh.com/current/installation-guide/wazuh-dashboard/step-by-step.html
 - Repositório no GitHub: https://github.com/wazuh/wazuh
