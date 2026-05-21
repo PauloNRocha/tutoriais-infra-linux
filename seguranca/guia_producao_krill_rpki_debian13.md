@@ -547,6 +547,20 @@ krillc info
 
 Esse comando local já funciona bem na `0.16.0` e ajuda a confirmar rapidamente versão, tempo de uptime e se o cliente está falando com o servidor.
 
+Outros comandos úteis de consulta, sem alterar a configuração:
+
+```bash
+krillc health
+krillc list
+krillc show --ca isp-exemplo-br
+krillc parents statuses --ca isp-exemplo-br
+krillc repo status --ca isp-exemplo-br
+krillc roas list --ca isp-exemplo-br
+krillc aspas list --ca isp-exemplo-br
+```
+
+> **Observação:** `krillc show --ca ...` é ótimo para diagnóstico local, mas a saída é grande e inclui certificado PEM, URIs de publicação e recursos da CA. Antes de colar em chamado, grupo ou documentação pública, revise e remova o que não precisa aparecer.
+
 ### 7.1 Fluxo com Registro.br (Parent)
 
 Se seu Parent for o Registro.br, siga este fluxo:
@@ -634,53 +648,73 @@ Use a interface quando ela estiver disponível no seu Krill. Se a sua instalaç�
 
 ### 10.2 ASPA pela CLI
 
+Nos comandos abaixo, ajuste `isp-exemplo-br` para o nome real da sua CA no Krill. Se você omitir `--ca`, o `krillc` retorna erro informando que o argumento é obrigatório, a menos que você já tenha definido `KRILL_CLI_MY_CA` no ambiente.
+
+Antes de alterar qualquer coisa, confira o nome exato da CA:
+
+```bash
+krillc list
+```
+
+Se quiser reduzir digitação durante a manutenção, você pode definir a CA da sessão:
+
+```bash
+export KRILL_CLI_MY_CA="isp-exemplo-br"
+```
+
+Nesse caso, os comandos abaixo podem ser usados sem `--ca isp-exemplo-br`.
+
 A documentação estável do Krill também mostra o gerenciamento de ASPA pela CLI. A notação é:
 
 ```text
-AS65000 => AS65001, AS65002(v4), AS65003(v6)
+65000 => 65001, 65002(v4), 65003(v6)
 ```
+
+O Krill pode exibir a saída com o prefixo `AS`, como `AS65000 => AS65001`. Nos comandos, prefiro usar apenas o número do ASN, que é o formato mostrado pelo `krillc aspas add --help` no Krill 0.16.0.
 
 No exemplo:
 
-- `AS65000` é o ASN cliente, ou seja, o seu ASN;
-- `AS65001` é um provedor válido para IPv4 e IPv6;
-- `AS65002(v4)` é provedor apenas para IPv4;
-- `AS65003(v6)` é provedor apenas para IPv6.
+- `65000` é o ASN cliente, ou seja, o seu ASN;
+- `65001` é um provedor válido para IPv4 e IPv6;
+- `65002(v4)` é provedor apenas para IPv4;
+- `65003(v6)` é provedor apenas para IPv6.
 
 Se você quiser declarar explicitamente que um ASN não tem provedores:
 
 ```text
-AS65000 => <none>
+65000 => <none>
 ```
 
 Criar uma configuração ASPA:
 
 ```bash
-krillc aspas add --aspa "AS65000 => AS65001, AS65002(v4), AS65003(v6)"
+krillc aspas add --ca isp-exemplo-br --aspa "65000 => 65001, 65002(v4), 65003(v6)"
 ```
 
 Listar configurações ASPA existentes:
 
 ```bash
-krillc aspas list
+krillc aspas list --ca isp-exemplo-br
 ```
 
 Listar em JSON, útil para auditoria ou registro em chamado:
 
 ```bash
-krillc aspas list --format json
+krillc --format json aspas list --ca isp-exemplo-br
 ```
+
+> **Observação:** Em algumas versões, `--format` é uma opção global do `krillc` e precisa vir antes do subcomando. Se usar `krillc aspas list --ca isp-exemplo-br --format json`, o cliente pode retornar erro de argumento inesperado.
 
 Adicionar e remover provedores de um ASN cliente:
 
 ```bash
-krillc aspas update --customer AS65000 --add "AS65005" --remove "AS65001"
+krillc aspas update --ca isp-exemplo-br --customer 65000 --add "65005" --remove "65001"
 ```
 
 Remover a configuração ASPA de um ASN cliente:
 
 ```bash
-krillc aspas remove --customer AS65000
+krillc aspas remove --ca isp-exemplo-br --customer 65000
 ```
 
 > **Atenção:** O Krill permite apenas uma configuração ASPA por ASN cliente. Se precisar alterar a lista de provedores, atualize a configuração existente em vez de criar outra.
