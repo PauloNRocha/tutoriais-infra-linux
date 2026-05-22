@@ -8,6 +8,8 @@ Registrei este procedimento depois de ajustar um notebook com GPU híbrida, onde
 O cenário principal foi um notebook **Lenovo IdeaPad com GPU NVIDIA GTX 1650 Mobile**, mas boa parte do fluxo também serve como referência para outros casos parecidos.
 
 > **Ambiente testado:** Ubuntu 24.04 LTS (Noble Numbat).
+>
+> **Observação:** este guia registra um procedimento validado em um cenário específico. As versões do driver e do CUDA aparecem fixadas de propósito; não troque por versões mais novas sem validar o conjunto todo.
 
 ---
 
@@ -60,6 +62,8 @@ O `nouveau` é o driver open-source da NVIDIA e precisa ser desativado para evit
 
 1. Remova drivers NVIDIA antigos:
 
+> **Atenção:** esta etapa é agressiva e remove pacotes NVIDIA instalados pelo sistema. Antes de confirmar, revise a lista de pacotes que o `apt` pretende remover, principalmente em notebook de uso diário.
+
 ```bash
 sudo apt purge 'nvidia*'
 sudo apt autoremove --purge -y
@@ -102,7 +106,7 @@ sudo apt install build-essential gcc make dkms linux-headers-$(uname -r) -y
 >
 > **Vantagens:**
 >
-> - **Versão mais recente:** Você obtém o driver mais novo diretamente da NVIDIA (ex: 580.82.09), com as últimas otimizações e recursos.
+> - **Versão específica validada:** Você instala diretamente o arquivo baixado da NVIDIA (ex: 580.82.09), sem depender da versão escolhida automaticamente pelo `ubuntu-drivers`.
 > - **Suporte completo:** Garante o melhor suporte para CUDA, OpenGL, Vulkan e frameworks de IA (TensorFlow, PyTorch).
 > - **Independência:** Não fica preso à versão que o `ubuntu-drivers` considera "recomendada", que geralmente é mais antiga.
 >
@@ -223,6 +227,8 @@ sudo apt update
 ```
 
 ### Instalar CUDA Toolkit 13.0
+
+O CUDA 13.0 foi a versão usada neste procedimento. Se você estiver seguindo outro guia de atualização ou já tiver validado outra versão, mantenha a coerência entre driver, toolkit e variáveis de ambiente.
 
 1. Instale o toolkit:
 
