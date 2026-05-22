@@ -1,5 +1,5 @@
 # Tutoriais de Infraestrutura, Redes e Segurança
-### Linux • ISP • Produção
+### Linux • Redes • Segurança • ISP • Produção
 
 ![Linux](https://img.shields.io/badge/Linux-Debian%20%7C%20Ubuntu-2b3137?style=flat-square&logo=linux)
 ![Foco](https://img.shields.io/badge/Foco-ISP%20%7C%20Produ%C3%A7%C3%A3o-0a7ea4?style=flat-square)
@@ -14,21 +14,43 @@ Ele funciona como consulta para mim e também para quem quiser aproveitar alguma
 
 Muita coisa aqui existe por um motivo simples: eu também esqueço. Então prefiro registrar direito, com contexto, ordem de execução e observações práticas, para não precisar toda vez voltar a pesquisar tudo do zero quando precisar repetir algo.
 
+A ideia não é transformar cada arquivo em uma documentação oficial do projeto citado. O foco é registrar procedimentos práticos, com o máximo de contexto possível, para ajudar em implantação, manutenção, recuperação e diagnóstico.
+
 ## Como esses guias são escritos
 
 Os guias daqui tentam ser detalhados porque eu realmente uso esse material como referência de trabalho, não como texto de vitrine.
 
 Uso IA como apoio para revisar escrita, organizar ideias e melhorar acabamento, mas a base dos guias vem de uso real, teste, erro, manutenção e rotina de infraestrutura.
 
-Pode acontecer de algo não funcionar para você exatamente da mesma forma que funcionou no meu cenário, caso opte por replicar em outra distro. Então use os guias como base prática, mas revise e adapte conforme necessário antes de aplicar.
+Pode acontecer de algo não funcionar exatamente da mesma forma em outro ambiente, outra versão de sistema ou outra distribuição. Use os guias como base prática, mas revise e adapte conforme necessário antes de aplicar.
+
+## Para quem este repositório pode servir
+
+Este repositório pode ser útil para administradores de sistemas, técnicos de provedores, analistas de redes, estudantes de infraestrutura Linux e profissionais que precisam lidar com servidores em produção.
+
+Os guias assumem alguma familiaridade com terminal Linux, edição de arquivos de configuração e conceitos básicos de rede.
+
+## Antes de aplicar em produção
+
+Boa parte do conteúdo mexe com serviços sensíveis: SSH, DNS, VPN, firewall, RPKI, monitoramento, disco, usuários e automações.
+
+Antes de executar qualquer procedimento em produção:
+
+- leia o guia inteiro antes de começar;
+- ajuste nomes, IPs, domínios, portas e caminhos para o seu ambiente;
+- faça backup, snapshot ou tenha um plano de rollback quando o impacto justificar;
+- valide primeiro em laboratório ou VM quando houver risco de indisponibilidade;
+- revise comandos destrutivos com calma, principalmente em disco, usuário, firewall e serviços remotos.
+
+Os procedimentos são compartilhados como referência prática. O uso em produção precisa ser revisado por quem administra o ambiente, porque cada rede tem suas particularidades.
 
 ## O que você vai encontrar aqui
 
-A maior parte dos guias aqui é voltada para ambiente de produção, com foco em Linux, redes e ISP. Sempre que dá, prefiro usar software livre e de código aberto.
+A maior parte dos guias é voltada para ambiente de produção, com foco em Linux, redes e ISP. Sempre que dá, prefiro usar software livre e de código aberto.
 
-Também tento deixar os passos bem detalhados, porque muita coisa depois vira consulta para mim mesmo, principalmente quando preciso repetir algum procedimento meses depois.
+Você vai encontrar procedimentos de instalação, configuração, hardening, recuperação e troubleshooting. Os comandos aparecem prontos para copiar, mas tento sempre explicar o motivo de cada etapa, porque comando sem contexto vira armadilha fácil.
 
-## Índice de tutoriais
+## Guias disponíveis
 
 ### Acesso remoto
 
