@@ -1,11 +1,13 @@
-# NVIDIA + CUDA + PRIME no Ubuntu 24.04 — instalação e configuração (GTX 1650)
+# NVIDIA + CUDA + PRIME no Ubuntu 24.04 — instalação, atualização e configuração (GTX 1650)
 
 *Criado em: 25 de setembro de 2025*  
-*Última atualização em: 11 de março de 2026*
+*Última atualização em: 29 de maio de 2026*
 
 Registrei este procedimento depois de ajustar um notebook com GPU híbrida, onde o objetivo era deixar o **driver proprietário NVIDIA**, o **CUDA Toolkit** e a renderização sob demanda via **PRIME** funcionando sem depender de tentativa e erro a cada reinstalação.
 
 O cenário principal foi um notebook **Lenovo IdeaPad com GPU NVIDIA GTX 1650 Mobile**, mas boa parte do fluxo também serve como referência para outros casos parecidos.
+
+A partir da revisão de maio de 2026, o guia também registra um caminho curto para atualizar o driver NVIDIA pelo mesmo método `.run`, partindo do pressuposto de que a instalação base foi feita por este procedimento.
 
 > **Ambiente testado:** Ubuntu 24.04 LTS (Noble Numbat).
 >
@@ -21,8 +23,9 @@ O cenário principal foi um notebook **Lenovo IdeaPad com GPU NVIDIA GTX 1650 Mo
 5. [Validar instalação do driver e proteger contra `apt`](#5)
 6. [Instalar CUDA Toolkit](#6)
 7. [Configuração gráfica híbrida (Intel + NVIDIA)](#7)
-8. [Solução de Problemas](#8)
-9. [Referências](#9)
+8. [Atualizar o driver NVIDIA pelo mesmo método `.run`](#8)
+9. [Solução de Problemas](#9)
+10. [Referências](#10)
 
 ---
 
@@ -357,20 +360,163 @@ prime-run vulkaninfo | grep "GPU id"
 ---
 
 <a id="8"></a>
-## 8. Solução de Problemas
-Se ocorrer algum erro durante ou após a instalação (tela preta, falha ao carregar o driver, `nvidia-smi` não funcionando), use o guia de troubleshooting abaixo.
+## 8. Atualizar o driver NVIDIA pelo mesmo método `.run`
+
+Esta seção não é um guia genérico de atualização de driver NVIDIA. Ela parte do pressuposto de que você seguiu este guia: driver instalado pelo arquivo `.run`, `nouveau` desativado, dependências de compilação instaladas, CUDA Toolkit já funcional e PRIME configurado para usar a NVIDIA sob demanda.
+
+Se o driver atual está estável e você não precisa de uma versão nova por compatibilidade, correção ou suporte a CUDA, não atualize só por existir versão mais recente. Driver de vídeo em notebook híbrido é peça sensível.
+
+> **Atualização validada:** no cenário deste notebook, a atualização para `NVIDIA-Linux-x86_64-595.80.run` funcionou mantendo o mesmo método de instalação do guia.
+>
+> Se você usar outra versão, ajuste o nome do arquivo nos comandos.
+
+### 8.1 Conferir o estado antes de atualizar
+
+Antes de trocar o driver, confira o estado atual:
+
+```bash
+nvidia-smi
+uname -r
+lsmod | grep nvidia
+dkms status | grep -i nvidia
+```
+
+Se `nvidia-smi` já falha antes da atualização, resolva isso primeiro. Atualizar por cima de um ambiente quebrado pode dificultar o diagnóstico.
+
+### 8.2 Baixar e validar o instalador novo
+
+Baixe o driver no site oficial da NVIDIA e salve em `~/Downloads`.
+
+Exemplo usado nesta revisão:
+
+```text
+NVIDIA-Linux-x86_64-595.80.run
+```
+
+Depois valide o arquivo:
+
+```bash
+cd ~/Downloads
+sh NVIDIA-Linux-x86_64-595.80.run --check
+```
+
+Dê permissão de execução:
+
+```bash
+chmod +x NVIDIA-Linux-x86_64-595.80.run
+```
+
+Mantenha uma cópia dos instaladores, principalmente do driver antigo que estava funcionando:
+
+```bash
+mkdir -p ~/drivers-nvidia
+cp ~/Downloads/NVIDIA-Linux-x86_64-*.run ~/drivers-nvidia/
+```
+
+### 8.3 Conferir dependências do kernel atual
+
+Garanta que os headers e ferramentas de compilação continuam presentes para o kernel em uso:
+
+```bash
+sudo apt update
+sudo apt install build-essential gcc make dkms linux-headers-$(uname -r) -y
+```
+
+O `dkms` é importante porque permite reconstruir o módulo NVIDIA em atualizações menores de kernel. Ele não elimina todos os riscos, mas reduz trabalho manual em atualizações normais do sistema.
+
+### 8.4 Sair da interface gráfica
+
+Salve tudo antes de continuar. A NVIDIA recomenda sair do servidor gráfico e fechar aplicações OpenGL antes de rodar o instalador.
+
+Entre em modo texto:
+
+```bash
+sudo systemctl isolate multi-user.target
+```
+
+A partir daqui, faça login no terminal local ou em um TTY, como `Ctrl` + `Alt` + `F3`.
+
+### 8.5 Rodar o instalador novo
+
+No terminal em modo texto:
+
+```bash
+cd ~/Downloads
+sudo ./NVIDIA-Linux-x86_64-595.80.run --dkms
+```
+
+Durante a instalação, mantenha a mesma lógica do procedimento original:
+
+- escolha **NVIDIA Proprietary**;
+- aceite o uso de **DKMS** quando perguntado;
+- não rode `nvidia-xconfig` em notebook híbrido, salvo necessidade específica;
+- instale bibliotecas 32-bit apenas se usa Steam, Wine, jogos ou aplicações 32-bit;
+- se Secure Boot estiver ativo, pode ser necessário assinar/enrolar o módulo, conforme o fluxo apresentado pelo instalador.
+
+Depois da instalação:
+
+```bash
+sudo update-initramfs -u
+sudo reboot
+```
+
+### 8.6 Validar depois do reboot
+
+Depois de reiniciar, confira o driver carregado:
+
+```bash
+nvidia-smi
+```
+
+A saída deve mostrar a versão nova do driver:
+```text
+NVIDIA-SMI 595.80        Driver Version: 595.80       CUDA Version: 13.2
+```
+
+> **Observação:** o campo `CUDA Version` do `nvidia-smi` mostra a versão de CUDA runtime suportada pelo driver. Para conferir o CUDA Toolkit instalado no sistema, use `nvcc --version`.
+
+Se a lista de processos mostrar `Xorg`, `gnome-shell`, Steam, navegador, editor ou outra aplicação gráfica, isso indica que a GPU está sendo usada por algum processo naquele momento. O ponto principal aqui é confirmar que o driver carregou e que a versão exibida é a esperada.
+
+Confira os módulos:
+
+```bash
+lsmod | grep nvidia
+dkms status | grep -i nvidia
+```
+
+Teste a renderização NVIDIA sob demanda:
+
+```bash
+__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia glxinfo | grep "OpenGL renderer"
+```
+
+Se usa CUDA Toolkit, confirme se o `nvcc` continua acessível:
+
+```bash
+nvcc --version
+```
+
+Esta seção atualiza apenas o driver. Ela não atualiza o CUDA Toolkit.
+
+---
+
+<a id="9"></a>
+## 9. Solução de Problemas
+Se ocorrer algum erro durante ou após a instalação ou atualização (tela preta, falha ao carregar o driver, `nvidia-smi` não funcionando), use o guia de troubleshooting abaixo.
 
 Veja também: [Guia de Solução de Problemas NVIDIA + CUDA](guia_nvidia_cuda_troubleshooting_ubuntu2404.md)
 
 ---
 
-<a id="9"></a>
+<a id="10"></a>
 ## Referências (fontes para consulta)
 
 ### NVIDIA (oficial)
 
 - CUDA Installation Guide for Linux: https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html
 - NVIDIA Linux Driver README (instalação do driver): https://download.nvidia.com/XFree86/Linux-x86_64/580.82.09/README/installdriver.html
+- NVIDIA Unix Driver Archive: https://www.nvidia.com/en-us/drivers/unix/
+- NVIDIA Linux x86_64 Display Driver 595.80: https://www.nvidia.com/en-us/drivers/details/271745/
 - PRIME Render Offload (NVIDIA driver README): https://download.nvidia.com/XFree86/Linux-x86_64/550.54.14/README/primerenderoffload.html
 
 ### Ubuntu (referência)
