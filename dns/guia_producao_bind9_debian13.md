@@ -1,7 +1,7 @@
 # Guia de Produção: BIND9 no Debian 13 com Primary/Secondary, TSIG, DNSSEC e Fail2Ban
 
 *Criado em: 08 de janeiro de 2026*  
-*Última atualização em: 15 de maio de 2026*
+*Última atualização em: 16 de junho de 2026*
 
 Servidor DNS autoritativo é um daqueles serviços em que detalhe pequeno vira problema grande muito rápido. Aqui deixo o caminho que adotei no **Debian 13 (Trixie)** para subir **BIND9** com dois servidores, transferência autenticada por **TSIG**, assinatura automática com **DNSSEC** e proteção básica com **nftables** e **Fail2Ban**.
 
@@ -562,19 +562,21 @@ sudo install -m 0640 -o root -g bind /dev/null /etc/bind/keys.conf
 Verifique qual utilitário está disponível:
 
 ```bash
-command -v tsig-keygen || command -v ddns-confgen
+sudo find /usr/sbin /usr/bin -maxdepth 1 \( -name tsig-keygen -o -name ddns-confgen \)
 ```
+
+> Em Debian, esses binários podem estar em `/usr/sbin`, que nem sempre aparece no `PATH` do usuário comum. Por isso, a verificação acima procura também diretamente nos caminhos do sistema.
 
 Opção A — usando `tsig-keygen` (se disponível):
 
 ```bash
-sudo tsig-keygen -a hmac-sha256 xfr-exemplo | sudo tee /etc/bind/keys.conf >/dev/null
+sudo /usr/sbin/tsig-keygen -a hmac-sha256 xfr-exemplo | sudo tee /etc/bind/keys.conf >/dev/null
 ```
 
 Opção B — alternativa compatível, mas em modo silencioso:
 
 ```bash
-sudo ddns-confgen -q -a hmac-sha256 -k xfr-exemplo | sudo tee /etc/bind/keys.conf >/dev/null
+sudo /usr/sbin/ddns-confgen -q -a hmac-sha256 -k xfr-exemplo | sudo tee /etc/bind/keys.conf >/dev/null
 ```
 
 > No Debian 13 atual, `ddns-confgen` **sem `-q`** inclui blocos de exemplo como `update-policy` e `nsupdate`, e isso quebra o `named-checkconf` quando você grava a saída direto em `/etc/bind/keys.conf`.  
@@ -596,15 +598,26 @@ sudo chmod 0640 /etc/bind/keys.conf
 No **ns1**:
 
 ```bash
-sudo scp /etc/bind/keys.conf root@203.0.113.20:/etc/bind/keys.conf
+NS2_IP="203.0.113.20"
+SSH_PORT="2222"
+SSH_USER="usuario_admin"
+
+sudo cp /etc/bind/keys.conf /tmp/keys.conf
+sudo chown "$USER" /tmp/keys.conf
+scp -P "$SSH_PORT" /tmp/keys.conf "$SSH_USER@$NS2_IP:/tmp/keys.conf"
+rm -f /tmp/keys.conf
 ```
 
 No **ns2**:
 
 ```bash
-sudo chown root:bind /etc/bind/keys.conf
-sudo chmod 0640 /etc/bind/keys.conf
+sudo install -o root -g bind -m 0640 /tmp/keys.conf /etc/bind/keys.conf
+sudo rm -f /tmp/keys.conf
 ```
+
+> No `scp`, a porta SSH customizada usa `-P` maiúsculo. Exemplo: `scp -P 2222 arquivo usuario@servidor:/tmp/`.
+>
+> Evite mudar a permissão do `keys.conf` para facilitar o teste. A chave TSIG deve continuar restrita.
 
 ### 8.4) Incluir o arquivo de chaves no BIND (**apenas uma vez**)
 
@@ -902,6 +915,19 @@ sudo -u bind nano /var/lib/bind/primary-rev/IPv6/2001.db8.abcd.x/2001.db8.abcd.r
 > - Inverta os nibbles.
 > - Para /48, o “nome da zona” já consome 12 nibbles (48 bits). Você escreve os 20 nibbles restantes no PTR.
 
+Para conferir o reverso IPv6 localmente, você pode usar `ipv6calc`:
+
+```bash
+sudo apt install ipv6calc
+ipv6calc --addr_to_ip6arpa 2001:db8:abcd::10
+```
+
+Para conferência visual, também é útil usar uma calculadora de subnet IPv6, como a do GestióIP:
+
+```text
+https://www.gestioip.net/cgi-bin/subnet_calculator.cgi
+```
+
 ```zone
 $TTL 86400
 @   IN SOA  ns1.exemplo.com.br. hostmaster.exemplo.com.br. (
@@ -1080,6 +1106,11 @@ dig @203.0.113.10 google.com A +noall +comments +answer
 ### 11.3) Validar a delegação do domínio (antes de pensar em DNSSEC)
 
 1. Use a ferramenta do Registro.br: **Verificação de DNS**.
+
+   ```text
+   https://registro.br/tecnologia/ferramentas/verificacao-de-dns/
+   ```
+
 2. Use `dig +trace` para ver se a delegação está indo para ns1/ns2:
 
 ```bash
@@ -1283,12 +1314,12 @@ Reinicie:
 
 ```bash
 sudo systemctl restart fail2ban
+sleep 3
 sudo systemctl status fail2ban --no-pager
 sudo fail2ban-client status named-refused
 ```
 
-> Em Debian 13 limpo, pode acontecer de o `systemctl restart fail2ban` terminar e o `fail2ban-client` ainda pegar a janela antes do socket ficar pronto.  
-> Se o erro for só `Failed to access socket path: /var/run/fail2ban/fail2ban.sock`, espere alguns segundos e rode o `fail2ban-client` de novo.
+> O `sleep 3` evita consultar o `fail2ban-client` antes do socket do Fail2Ban estar pronto. Em servidores mais lentos, se ainda aparecer `Failed to access socket path: /var/run/fail2ban/fail2ban.sock`, aguarde alguns segundos e rode os comandos de status novamente.
 >
 > Se o erro persistir e o `systemctl status fail2ban` não mostrar `Server ready`, aí sim trate como falha real e veja o log completo com:
 > `sudo journalctl -u fail2ban -n 200 --no-pager`.
@@ -1327,6 +1358,7 @@ Depois:
 
 ```bash
 sudo systemctl restart fail2ban
+sleep 3
 sudo fail2ban-client get named-refused ignoreip
 ```
 
@@ -1399,6 +1431,7 @@ Se você quer ser mais agressivo (e banir o IP no servidor inteiro), você pode 
 2. Reinicie e valide:
    ```bash
    sudo systemctl restart fail2ban
+   sleep 3
    sudo systemctl status fail2ban --no-pager
    sudo fail2ban-client status named-refused
    sudo nft list ruleset | grep -i f2b || echo "nenhuma regra f2b apareceu no ruleset"
@@ -1439,6 +1472,7 @@ Reinicie:
 
 ```bash
 sudo systemctl restart fail2ban
+sleep 3
 sudo systemctl status fail2ban --no-pager
 sudo fail2ban-client status recidive
 ```
@@ -1561,8 +1595,10 @@ O objetivo aqui é confirmar que **só o Secondary autorizado** consegue transfe
 
 2. (Opcional) Do ns2 (que tem a TSIG), valide que a transferência é possível **com assinatura TSIG**:
    ```bash
-   dig -k /etc/bind/keys.conf @203.0.113.10 exemplo.com.br AXFR | head
+   sudo dig -k /etc/bind/keys.conf @203.0.113.10 exemplo.com.br AXFR | head
    ```
+
+   Use `sudo` porque a chave TSIG deve ficar com permissão restrita. Não ajuste a permissão do arquivo apenas para o usuário comum conseguir rodar o teste.
 
 Se o passo (1) der certo e imprimir a zona inteira, você está com **vazamento de zona** e precisa revisar `allow-transfer` (deve ser TSIG, não `any;`).
 
@@ -1880,6 +1916,7 @@ Depois que tudo estiver estável (autoridade + transferência + serial correto):
 - DNSViz (DNSSEC): https://dnsviz.net/
 - Root hints (InterNIC): https://www.internic.net/domain/named.root
 - Gerador de PTR IPv6: http://rdns6.com/hostRecord
+- GestióIP IPv6 Subnet Calculator: https://www.gestioip.net/cgi-bin/subnet_calculator.cgi
 
 ### Fail2Ban (referência)
 
