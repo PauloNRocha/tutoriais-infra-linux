@@ -20,7 +20,7 @@ A ideia não é transformar cada arquivo em uma documentação oficial do projet
 
 Os guias daqui tentam ser detalhados porque eu realmente uso esse material como referência de trabalho, não como texto de vitrine.
 
-Uso IA como apoio para revisar escrita, organizar ideias e melhorar acabamento, mas a base dos guias vem de uso real, teste, erro, manutenção e rotina de infraestrutura.
+Alguns textos podem ter apoio de IA na revisão, organização e acabamento, mas a base dos guias vem de uso real, teste, erro, manutenção e rotina de infraestrutura.
 
 Pode acontecer de algo não funcionar exatamente da mesma forma em outro ambiente, outra versão de sistema ou outra distribuição. Use os guias como base prática, mas revise e adapte conforme necessário antes de aplicar.
 
@@ -48,6 +48,8 @@ Os procedimentos são compartilhados como referência prática. O uso em produç
 
 A maior parte dos guias é voltada para ambiente de produção, com foco em Linux, redes e ISP. Sempre que dá, prefiro usar software livre e de código aberto.
 
+Os guias publicados aqui priorizam procedimentos que já usei ou validei em algum cenário real antes de entrarem no repositório.
+
 Você vai encontrar procedimentos de instalação, configuração, hardening, recuperação e troubleshooting. Os comandos aparecem prontos para copiar, mas tento sempre explicar o motivo de cada etapa, porque comando sem contexto vira armadilha fácil.
 
 ## Guias disponíveis
@@ -73,6 +75,8 @@ Você vai encontrar procedimentos de instalação, configuração, hardening, re
 ---
 
 ### GPU (NVIDIA / CUDA)
+
+> Observação: os guias de NVIDIA/CUDA refletem um cenário validado em notebook com GPU híbrida. Eles se complementam e devem ser lidos em conjunto antes de adaptar comandos para outro hardware.
 
 | Título                                                                              | Descrição                                                      |
 | ----------------------------------------------------------------------------------- | -------------------------------------------------------------- |
@@ -145,4 +149,5 @@ O conteúdo deste repositório está licenciado sob a Creative Commons Attributi
 
 Na prática: você pode usar, copiar, adaptar e compartilhar os guias, inclusive em ambiente profissional, desde que mantenha a atribuição ao autor.
 
+Autor: Paulo Rocha
 GitHub: https://github.com/PauloNRocha/tutoriais-infra-linux
