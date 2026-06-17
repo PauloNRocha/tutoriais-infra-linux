@@ -1,7 +1,7 @@
 # Guia de Produção: Unbound no Debian 13 (Trixie) como DNS recursivo para ISP com DNSSEC e RPZ de segurança
 
 *Criado em: 23 de janeiro de 2026*  
-*Última atualização em: 15 de maio de 2026*
+*Última atualização em: 17 de junho de 2026*
 
 Em ISP, resolvedor recursivo é serviço de sustentação: se fica aberto, vira risco de abuso; se fica lento, parece que a internet inteira está ruim. Este guia mostra a configuração que uso como base para **Unbound** no **Debian 13 (Trixie)**, com **DNSSEC**, **QNAME Minimization**, **RPZ** para feeds de ameaça e automação para manter a operação previsível.
 
@@ -438,6 +438,40 @@ Regras deste guia:
 - cada arquivo começa com o bloco correto (`server:`, `remote-control:` etc.);
 - múltiplos `server:` são somados; quando um parâmetro aparece mais de uma vez, o último valor vence.
 
+Antes de criar os arquivos deste guia, confira se a instalação trouxe snippets padrão que possam repetir a mesma função:
+
+```bash
+ls -l /etc/unbound/unbound.conf.d/
+```
+
+Em algumas instalações podem existir arquivos como:
+
+```text
+remote-control.conf
+root-auto-trust-anchor-file.conf
+```
+
+Como este guia cria a configuração de DNSSEC em `20-dnssec-root-hints.conf` e o controle administrativo em `90-remote-control.conf`, esses dois snippets padrão podem ficar redundantes. Se eles estiverem gerando conflito na sua instalação, prefira **desativar com backup**, em vez de apagar:
+
+```bash
+TS="$(date +%F_%H%M%S)"
+
+for f in \
+  /etc/unbound/unbound.conf.d/remote-control.conf \
+  /etc/unbound/unbound.conf.d/root-auto-trust-anchor-file.conf
+do
+  if [ -e "$f" ]; then
+    sudo mv -v "$f" "${f}.off.${TS}"
+  fi
+done
+```
+
+Depois valide antes de reiniciar:
+
+```bash
+sudo unbound-checkconf
+```
+
 Importante: as redes `192.0.2.0/24` e `2001:db8::` abaixo são **EXEMPLO** (RFC 5737 / RFC 3849).  
 Troque por **prefixos reais** do seu ISP.
 
@@ -586,8 +620,29 @@ server:
     # Protege contra respostas tentando “remover” DNSSEC no caminho.
     harden-dnssec-stripped: yes
 
+    # Endurece a validação do caminho de referrals.
+    #
+    # Observação: a documentação do Unbound trata essa opção como experimental
+    # e alerta para carga extra de consultas. Foi mantida aqui porque foi
+    # validada no cenário deste guia. Se aparecer latência anormal ou falha
+    # específica de resolução, teste desativar esta opção primeiro.
+    harden-referral-path: yes
+
     # Protege contra algumas respostas “abaixo de NXDOMAIN”.
     harden-below-nxdomain: yes
+
+    # Protege contra tentativa de downgrade de algoritmo DNSSEC.
+    #
+    # Atenção: pode quebrar domínios com DNSSEC mal publicado ou cenários
+    # multi-signer que não entregam todas as assinaturas esperadas.
+    harden-algo-downgrade: yes
+
+    # Randomiza maiúsculas/minúsculas no QNAME para aumentar entropia contra spoofing.
+    #
+    # Atenção: é uma mitigação experimental. Se um domínio específico falhar
+    # por servidor autoritativo que não preserva o case corretamente, use
+    # `caps-exempt:` para esse domínio ou desative esta opção.
+    use-caps-for-id: yes
 
     # Pode melhorar performance/negativos com DNSSEC (use com cuidado em ambientes muito heterogêneos).
     aggressive-nsec: yes
@@ -645,6 +700,10 @@ server:
     ########################################################################
 
     # Ajuste se necessário (em conjunto com sysctl da seção 9, quando aplicável).
+    #
+    # Se você aumentar estes valores para 4m/8m e o Unbound avisar:
+    # "so-sndbuf ... was not granted" ou "so-rcvbuf ... was not granted",
+    # aplique os limites de kernel da seção 9 antes de tratar como erro do serviço.
     so-rcvbuf: 1m
     so-sndbuf: 1m
 
@@ -728,7 +787,7 @@ server:
 EOF
 ```
 
-De propósito, este guia **não** ativa por padrão `harden-referral-path`, `harden-algo-downgrade` e `use-caps-for-id`. A própria documentação do Unbound trata esses pontos com cautela por causa de compatibilidade, carga extra ou comportamento experimental. Se você quiser usar isso, teste separado e com métrica.
+As opções `harden-referral-path`, `harden-algo-downgrade` e `use-caps-for-id` aumentam o hardening, mas não são “gratuitas”. A própria documentação do Unbound recomenda cautela por compatibilidade, carga extra ou comportamento experimental. Se você tiver falhas estranhas em domínios específicos, faça rollback dessas três opções primeiro e valide novamente.
 
 6) Logs em arquivo (padrão deste guia).  
 Crie `/etc/unbound/unbound.conf.d/50-logging.conf`:
@@ -919,7 +978,9 @@ sudo tee /etc/logrotate.d/unbound >/dev/null <<'EOF'
 
     # Reabre o arquivo de log sem derrubar o serviço
     postrotate
-        /usr/sbin/unbound-control log_reopen >/dev/null 2>&1 || true
+        if ! /usr/sbin/unbound-control log_reopen >/dev/null 2>&1; then
+            logger -t logrotate-unbound "falha ao reabrir log do Unbound"
+        fi
     endscript
 }
 EOF
@@ -1143,6 +1204,8 @@ O que muda na prática:
 - o Unbound aplica RPZs **na ordem configurada**;
 - ações especiais como **PASSTHRU** podem parar a avaliação de outras zonas.
 
+> Se o log mostrar `init module 0: subnetcache`, existe alguma configuração carregando o módulo de EDNS Client Subnet. Para este cenário, não use `subnetcache` sem necessidade explícita. Ele não conversa bem com `serve-expired` e `prefetch`, gera avisos no log e não faz parte do desenho deste guia.
+
 ### 7.3 Tipos de gatilho (triggers) em RPZ 
 1) **QNAME trigger** (o mais usado em RPZ de segurança)  
    - bloqueia por **nome** (`dominio.tld` e `*.dominio.tld`);
@@ -1200,6 +1263,8 @@ server:
     # `respip` aplica a política de RPZ.
     # `validator` mantém DNSSEC ativo.
     # `iterator` faz a recursão desde a raiz (root hints).
+    #
+    # Não inclua `subnetcache` aqui, salvo se você realmente usa EDNS Client Subnet.
     ########################################################################
     module-config: "respip validator iterator"
 
@@ -1395,8 +1460,9 @@ Links oficiais do dump público:
 - JSON: http://data.phishtank.com/data/online-valid.json
 - Página oficial (descrição, limites e boas práticas): https://phishtank.org/developer_info.php
 
-No script deste guia, o PhishTank vem **desativado por padrão** (`ENABLE_PHISHTANK=0`) para respeitar limites/fair use.  
-Se você quiser habilitar, altere para `ENABLE_PHISHTANK=1` no topo do script.
+No script deste guia, o PhishTank vem **desativado por padrão** (`ENABLE_PHISHTANK=0`) para respeitar limites/fair use.
+
+Se você quiser habilitar, altere para `ENABLE_PHISHTANK=1` no topo do script e monitore os primeiros ciclos de atualização. O script preserva a última RPZ boa quando o PhishTank falha, retorna vazio, sofre rate limit ou deixa a nova blocklist pequena demais.
 
 > **Nota (informativo):** o PhishTank também oferece uma API de consulta (desenvolvedores).  
 > Para uso em **RPZ/DNS de ISP**, não é indicado depender de chamadas de API, nem automatizar agressivamente.  
@@ -1411,7 +1477,8 @@ Se você quiser habilitar, altere para `ENABLE_PHISHTANK=1` no topo do script.
 > 4) gera **RPZ blocklist** e **RPZ allowlist**, 
 > 5) faz update **atômico**, 
 > 6) recarrega Unbound, 
-> 7) faz rollback automático em falha.
+> 7) faz rollback automático em falha,
+> 8) preserva a última blocklist boa quando uma fonte opcional falha.
 
 > **IDN (domínios com acentos / Unicode):** este script trabalha com domínios **ASCII** e aceita **punycode** (`xn--...`). Ele **não converte** IDN Unicode para punycode. Se o seu feed vier com Unicode, padronize o feed para ASCII/punycode antes de usar.
 
@@ -1433,6 +1500,8 @@ SOURCES="URLhaus (abuse.ch hostfile) + PhishTank (dump público online-valid.csv
 
 MIN_BYTES_URLHAUS=2048
 MIN_BYTES_PHISHTANK=256
+MIN_BLOCK_ENTRIES=10
+MIN_BLOCK_WITH_PHISHTANK=1000
 
 ZONE_BLOCK_NAME="rpz.seguranca.bloqueio"
 ZONE_BLOCK_FILE="/var/lib/unbound/rpz/${ZONE_BLOCK_NAME}.zone"
@@ -1457,6 +1526,15 @@ curl_fetch() {
   curl --fail --show-error --silent --location \
     --connect-timeout 10 --max-time 180 \
     --retry 3 --retry-delay 2 --retry-connrefused \
+    -A "$USER_AGENT" "$@"
+}
+
+curl_fetch_phishtank() {
+  # PhishTank pode rate-limitar ou responder lentamente.
+  # Não faça retry agressivo aqui: se falhar, preservamos a última zona boa.
+  curl --fail --show-error --silent --location \
+    --connect-timeout 5 --max-time 30 \
+    --retry 0 \
     -A "$USER_AGENT" "$@"
 }
 
@@ -1499,8 +1577,12 @@ extract_domains_from_phishtank_csv() {
   # 1) Extrair apenas a URL da coluna "url" (2ª coluna no dump mais comum)
   # 2) Remover aspas
   # 3) Remover esquema, caminho e porta para ficar só com o host
-  cut -d, -f2 "$1" \
-    | (grep -E '^https?://' || true) \
+  awk -F, 'NR > 1 {
+    gsub(/"/, "", $2)
+    if ($2 ~ /^https?:\/\//) {
+      print $2
+    }
+  }' "$1" \
     | sed 's/\"//g' \
     | sed -E 's#^https?://##g' \
     | sed -E 's#/.*##g' \
@@ -1573,6 +1655,19 @@ sha256_file() {
   sha256sum "$1" | awk '{print $1}'
 }
 
+zone_entry_count() {
+  local file="$1"
+  local count
+
+  count="$(awk -F': ' '/^; Entradas: / {print $2; found=1; exit} END {if (!found) print ""}' "$file" | tr -dc '0-9')"
+  if [[ -n "$count" ]]; then
+    echo "$count"
+    return
+  fi
+
+  awk '/ CNAME \.$/ && $1 !~ /^\*/ {count++} END {print count+0}' "$file"
+}
+
 log "Iniciando atualização RPZ (segurança)..."
 
 mkdir -p /var/log/unbound /var/lib/unbound/rpz
@@ -1587,6 +1682,8 @@ fi
 DOMAINS_RAW="$WORKDIR/domains.raw"
 DOMAINS_BLOCK="$WORKDIR/domains.block"
 DOMAINS_ALLOW="$WORKDIR/domains.allow"
+PHISHTANK_OK=0
+PRESERVE_BLOCK_ZONE=0
 
 ZONE_BLOCK_NEW="$WORKDIR/${ZONE_BLOCK_NAME}.zone.new"
 ZONE_ALLOW_NEW="$WORKDIR/${ZONE_ALLOW_NAME}.zone.new"
@@ -1609,10 +1706,17 @@ extract_domains_from_urlhaus_hostfile "$URLHAUS_FILE" >> "$DOMAINS_RAW"
 # Para habilitar, altere `ENABLE_PHISHTANK=1` (no topo do script).
 if [[ "${ENABLE_PHISHTANK}" == "1" ]]; then
   PHISHTANK_FILE="$WORKDIR/phishtank.csv"
+  PHISHTANK_DOMAINS="$WORKDIR/phishtank.domains"
   log "Baixando PhishTank (dump público online-valid.csv)..."
-  if curl_fetch -o "$PHISHTANK_FILE" "$PHISHTANK_URL_PUBLIC"; then
+  if curl_fetch_phishtank -o "$PHISHTANK_FILE" "$PHISHTANK_URL_PUBLIC"; then
     if assert_min_bytes "$PHISHTANK_FILE" "$MIN_BYTES_PHISHTANK" "PhishTank CSV"; then
-      extract_domains_from_phishtank_csv "$PHISHTANK_FILE" >> "$DOMAINS_RAW" || true
+      extract_domains_from_phishtank_csv "$PHISHTANK_FILE" > "$PHISHTANK_DOMAINS"
+      if [[ -s "$PHISHTANK_DOMAINS" ]]; then
+        cat "$PHISHTANK_DOMAINS" >> "$DOMAINS_RAW"
+        PHISHTANK_OK=1
+      else
+        log "AVISO: PhishTank baixou, mas não gerou domínios válidos após extração."
+      fi
     else
       log "AVISO: PhishTank retornou pouco/nada (dump indisponível ou rate limit)."
     fi
@@ -1629,7 +1733,7 @@ log "Normalizando e validando domínios..."
 normalize_domains < "$DOMAINS_RAW" > "$DOMAINS_BLOCK"
 
 if [[ -s "$ALLOWLIST" ]]; then
-  normalize_domains < "$ALLOWLIST" > "$DOMAINS_ALLOW" || true
+  normalize_domains < "$ALLOWLIST" > "$DOMAINS_ALLOW"
 else
   : > "$DOMAINS_ALLOW"
 fi
@@ -1639,9 +1743,24 @@ TOTAL_ALLOW="$(wc -l < "$DOMAINS_ALLOW" | tr -d ' ')"
 log "Domínios na blocklist (após limpeza): $TOTAL_BLOCK"
 log "Domínios na allowlist (após limpeza): $TOTAL_ALLOW"
 
-if [[ "$TOTAL_BLOCK" -lt 10 ]]; then
+if [[ "$TOTAL_BLOCK" -lt "$MIN_BLOCK_ENTRIES" ]]; then
   log "ERRO: blocklist pequena demais (${TOTAL_BLOCK}). Abortando para evitar publicar RPZ vazia."
   exit 1
+fi
+
+if [[ "${ENABLE_PHISHTANK}" == "1" && "$PHISHTANK_OK" -ne 1 && "$TOTAL_BLOCK" -lt "$MIN_BLOCK_WITH_PHISHTANK" ]]; then
+  ACTIVE_BLOCK_TOTAL=0
+  if [[ -f "$ZONE_BLOCK_FILE" ]]; then
+    ACTIVE_BLOCK_TOTAL="$(zone_entry_count "$ZONE_BLOCK_FILE")"
+  fi
+
+  if [[ "$ACTIVE_BLOCK_TOTAL" -ge "$MIN_BLOCK_WITH_PHISHTANK" ]]; then
+    PRESERVE_BLOCK_ZONE=1
+    log "AVISO: PhishTank indisponível/rate-limit e nova blocklist ficou pequena (${TOTAL_BLOCK}). Preservando zona ativa (${ACTIVE_BLOCK_TOTAL} entradas)."
+  else
+    log "ERRO: PhishTank indisponível/rate-limit e não há zona ativa suficiente para preservar."
+    exit 1
+  fi
 fi
 
 ##############################################################################
@@ -1654,7 +1773,9 @@ GEN_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # - não “precisa” seguir um padrão rígido de autoridade (não é zona pública autoritativa).
 SERIAL="$(date -u +%Y%m%d%H)"
 zone_header "$ZONE_ALLOW_NAME" "$SERIAL" "allowlist (rpz-passthru)" "$TOTAL_ALLOW" > "$ZONE_ALLOW_NEW"
-zone_header "$ZONE_BLOCK_NAME" "$SERIAL" "blocklist (NXDOMAIN via rpz-action-override)" "$TOTAL_BLOCK" > "$ZONE_BLOCK_NEW"
+if [[ "$PRESERVE_BLOCK_ZONE" -eq 0 ]]; then
+  zone_header "$ZONE_BLOCK_NAME" "$SERIAL" "blocklist (NXDOMAIN via rpz-action-override)" "$TOTAL_BLOCK" > "$ZONE_BLOCK_NEW"
+fi
 
 # Allowlist: PASSTHRU (deve vir antes na política RPZ em /etc/unbound/unbound.conf.d/60-rpz-seguranca.conf)
 while read -r d; do
@@ -1663,12 +1784,16 @@ while read -r d; do
   echo "*.${d} CNAME rpz-passthru." >> "$ZONE_ALLOW_NEW"
 done < "$DOMAINS_ALLOW"
 
-# Blocklist: NXDOMAIN (será aplicado via rpz-action-override na política RPZ em /etc/unbound/unbound.conf.d/60-rpz-seguranca.conf)
-while read -r d; do
-  [[ -n "$d" ]] || continue
-  echo "${d} CNAME ." >> "$ZONE_BLOCK_NEW"
-  echo "*.${d} CNAME ." >> "$ZONE_BLOCK_NEW"
-done < "$DOMAINS_BLOCK"
+if [[ "$PRESERVE_BLOCK_ZONE" -eq 0 ]]; then
+  # Blocklist: NXDOMAIN (será aplicado via rpz-action-override na política RPZ em /etc/unbound/unbound.conf.d/60-rpz-seguranca.conf)
+  while read -r d; do
+    [[ -n "$d" ]] || continue
+    echo "${d} CNAME ." >> "$ZONE_BLOCK_NEW"
+    echo "*.${d} CNAME ." >> "$ZONE_BLOCK_NEW"
+  done < "$DOMAINS_BLOCK"
+else
+  log "Blocklist ativa será preservada; gerando apenas allowlist nova."
+fi
 
 ##############################################################################
 # 4) Swap atômico + reload seguro (com rollback)
@@ -1685,7 +1810,11 @@ if [[ -f "$ZONE_BLOCK_FILE" ]]; then
 fi
 
 stage_zone_atomic "$ZONE_ALLOW_NEW" "$ZONE_ALLOW_FILE"
-stage_zone_atomic "$ZONE_BLOCK_NEW" "$ZONE_BLOCK_FILE"
+if [[ "$PRESERVE_BLOCK_ZONE" -eq 0 ]]; then
+  stage_zone_atomic "$ZONE_BLOCK_NEW" "$ZONE_BLOCK_FILE"
+else
+  log "Preservando ${ZONE_BLOCK_FILE}."
+fi
 
 reload_unbound() {
   # Preferência: unbound-control preservando cache, quando possível.
@@ -1743,7 +1872,7 @@ sudo chmod 0755 /usr/local/bin/update-unbound-rpz.sh
 ### 8.3 Nota sobre feeds (PhishTank / Spamhaus / licenças)
 
 - **URLhaus (abuse.ch)**: excelente para malware/C2. Verifique **termos de uso** antes de uso comercial e respeite limites/fair use.
-- **PhishTank**: o script pode usar o **dump público** (online-valid.csv), sem chamadas de API. A API existe (informativo), mas não é indicada para uso direto em RPZ/DNS de ISP; respeite termos/rate limits.
+- **PhishTank**: o script pode usar o **dump público** (online-valid.csv), sem chamadas de API. A API existe (informativo), mas não é indicada para uso direto em RPZ/DNS de ISP; respeite termos/rate limits. O dump público pode falhar, retornar pouco conteúdo ou sofrer rate limit. Por isso, quando `ENABLE_PHISHTANK=1`, o script preserva a última blocklist boa se a nova lista ficar pequena demais.
 - **Spamhaus DROP/EDROP**: listas de **IP/prefixos** (não de domínios). Faz mais sentido em firewall/antiabuso ou em RPZ por **Response IP** (avançado e com risco de falso positivo).
 
 > **Importante:** este guia **não fornece feed/lista pronta** de domínios. Ele mostra **como consumir** feeds *quando* você tiver fontes com **licença/termos compatíveis** com o seu uso e como transformar isso em zonefiles RPZ com governança (allowlist, auditoria e rollback).
@@ -1751,7 +1880,8 @@ sudo chmod 0755 /usr/local/bin/update-unbound-rpz.sh
 Boas práticas de “higiene” com feeds:
 - atualize com frequência razoável (ex.: **6h–24h**) e use **jitter** (ver timer abaixo);
 - mantenha `User-Agent` e logs de update (auditoria);
-- tenha allowlist e rollback definidos antes de ligar NXDOMAIN em produção.
+- tenha allowlist e rollback definidos antes de ligar NXDOMAIN em produção;
+- trate feeds baseados em URL com cautela: ao transformar URLs em domínio, um falso positivo pode liberar ou bloquear um domínio inteiro usado por SaaS/CDN legítimo.
 
 Critério de escolha (por que este guia evita listas “controversas”):
 - O objetivo aqui é **segurança**, não “controle de conteúdo”. Feeds de ads/tracking/pornografia/apostas etc aumentam risco jurídico e dano colateral.
@@ -1812,6 +1942,45 @@ sudo /usr/local/bin/update-unbound-rpz.sh
 
 > Se o script reclamar de `unbound-control`/`reload`, confirme que você fez o passo **6.4** (chaves do `unbound-control` + serviço `unbound` rodando).
 
+### 8.5 Monitoramento inicial após habilitar feeds
+
+Depois de habilitar ou alterar feeds, monitore por algumas horas antes de considerar a política estável.
+
+Verifique o log do atualizador:
+
+```bash
+sudo tail -n 80 /var/log/unbound/rpz-update.log
+```
+
+Procure por:
+
+```text
+Domínios na blocklist
+Domínios na allowlist
+PhishTank indisponível/rate-limit
+Preservando zona ativa
+Atualização concluída com sucesso
+```
+
+Se `rpz-log: yes` estiver ativo na política RPZ, acompanhe domínios bloqueados:
+
+```bash
+sudo grep 'rpz: applied' /var/log/unbound/unbound.log | tail -n 100
+```
+
+Se aparecer falso positivo, adicione o domínio na allowlist e gere novamente as zonas:
+
+```bash
+sudo nano /etc/unbound/rpz/rpz-allowlist.txt
+sudo /usr/local/bin/update-unbound-rpz.sh
+```
+
+Para validar rapidamente um domínio liberado pela allowlist:
+
+```bash
+dig @127.0.0.1 DOMINIO_DA_ALLOWLIST A +noall +answer +comments
+```
+
 ---
 
 <a id="9"></a>
@@ -1819,6 +1988,8 @@ sudo /usr/local/bin/update-unbound-rpz.sh
 
 > **OPCIONAL:** se você **não** tem métricas indicando drops/erros (ex.: `UdpRcvbufErrors`, softnet drops, exaustão de portas), **não aplique ainda**.  
 > Primeiro observe comportamento real em produção ou em teste controlado e volte aqui quando houver evidência.
+
+> **Exceção prática:** se você já ajustou `so-rcvbuf`/`so-sndbuf` no Unbound e o serviço iniciou com aviso de buffer negado, aplique pelo menos `net.core.rmem_max` e `net.core.wmem_max`. O aviso não significa que o Unbound falhou; significa que o kernel concedeu um buffer menor que o solicitado.
 
 ### Contexto / por quê
 
@@ -1831,6 +2002,13 @@ Em recursor de ISP, estes ajustes fazem mais diferença quando você tem:
 Se o seu recursor é pequeno e estável, trate como **opcional** e volte aqui quando tiver métricas que indiquem necessidade.
 
 ### O que fazer agora se você decidiu aplicar
+
+Confira os valores atuais:
+
+```bash
+sudo sysctl net.core.rmem_max
+sudo sysctl net.core.wmem_max
+```
 
 Crie um arquivo dedicado:
 
@@ -1852,6 +2030,13 @@ Aplique:
 
 ```bash
 sudo sysctl --system
+```
+
+Se o ajuste foi feito para corrigir aviso de `so-rcvbuf` ou `so-sndbuf`, reinicie o Unbound e confira o log:
+
+```bash
+sudo systemctl restart unbound
+sudo journalctl -u unbound -n 50 --no-pager
 ```
 
 #### Explicação detalhada
