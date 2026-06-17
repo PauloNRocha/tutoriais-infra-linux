@@ -9,7 +9,7 @@ Ele combina as seguintes características e boas práticas:
 
 -   **Segurança de Protocolo**: Validação **DNSSEC** ponta a ponta e minimização de consultas (**QNAME Minimization (Minimização de QNAME)**).
 -   **Segurança Ativa**: Firewall `nftables` restritivo e proteção contra abuso de clientes com **Fail2Ban**.
--   **Proteção de Rede (RPZ de segurança)**: Bloqueio de domínios de malware, phishing e botnets/C2 via **RPZ (Response Policy Zones)**, com atualização automática e robusta.
+-   **Proteção de Rede (RPZ de segurança)**: Bloqueio de domínios associados a malware e phishing via **RPZ (Response Policy Zones)**, com cobertura parcial de infraestrutura C2 conforme os feeds usados.
 -   **Alta Performance para ISP**: Otimização de cache, threads e buffers de rede para alto volume de tráfego.
 -   **Automação e Operação**: Scripts e `systemd timers` para manter as listas de bloqueio atualizadas e comandos de gestão para o dia a dia.
 
@@ -49,7 +49,7 @@ Ele combina as seguintes características e boas práticas:
 4. Implementa uma **política de RPZ focada em ameaças**, somente:
    - phishing
    - malware
-   - botnets / C2
+   - infraestrutura relacionada a botnets/C2 quando a fonte usada trouxer esse tipo de indicador
 5. Faz o bloqueio **exclusivamente via DNS**, usando **Response Policy Zones (RPZ)** do Unbound.
 6. Automatiza atualização de listas com **scripts + systemd timers**.
 7. Integra **Fail2Ban** para **banir IPs abusivos** via **nftables set**.
@@ -65,7 +65,7 @@ Ele combina as seguintes características e boas práticas:
 ### 0.3 Por que isso NÃO fere a neutralidade da rede e qual o impacto pro cliente
 
 - **Não há inspeção de conteúdo (DPI)** nem bloqueio por “categoria”. O DNS só decide **se um nome resolve**.
-- O bloqueio é baseado em **ameaças objetivas de segurança** (phishing/malware/C2) publicadas em **feeds de segurança**, e não em preferências comerciais/políticas.
+- O bloqueio é baseado em **ameaças objetivas de segurança** (phishing, malware e indicadores relacionados a botnets/C2 quando disponíveis nos feeds), e não em preferências comerciais/políticas.
 - O efeito para o usuário é, em geral, **NXDOMAIN** (como “domínio não existe”). Para falsos positivos, existe **allowlist** e rollback rápido.
 - A implementação é **transparente e reversível**: você consegue desativar a política sem parar o DNS (seção 13).
 
@@ -1169,7 +1169,7 @@ sudo unbound-control status
 ## 7. RPZ (conceito, configuração e modo sombra)
 
 > **Resumo (RPZ neste guia):**
-> - objetivo: bloquear **ameaças** (phishing/malware/C2) via DNS, com governança (allowlist, auditoria e rollback);
+> - objetivo: bloquear **ameaças** (phishing, malware e indicadores relacionados a C2 quando disponíveis nos feeds) via DNS, com governança (allowlist, auditoria e rollback);
 > - estratégia: **duas RPZs** (allowlist primeiro, blocklist depois);
 > - operação segura: comece em **modo sombra** (log sem bloquear) e só depois ative NXDOMAIN.
 >
@@ -1181,7 +1181,7 @@ sudo unbound-control status
 
 ### 7.1 Por que RPZ aqui (e por que não `local-zone`)
 
-Para uma política de bloqueio **focada em ameaças** (“phishing/malware/botnet/C2”), você quer:
+Para uma política de bloqueio **focada em ameaças** (phishing, malware e, conforme a fonte, infraestrutura relacionada a botnets/C2), você quer:
 - política **explicável e auditável** (zona DNS),
 - ação padronizada (NXDOMAIN),
 - capacidade de **modo sombra** (logar sem bloquear),
@@ -1285,7 +1285,7 @@ rpz:
     ########################################################################
     # RPZ 2/2: Blocklist (segurança)
     #
-    # Objetivo: bloquear ameaças (phishing/malware/C2) via NXDOMAIN.
+    # Objetivo: bloquear ameaças de phishing/malware e indicadores relacionados a C2 via NXDOMAIN.
     # A ação é controlada por `rpz-action-override`.
     ########################################################################
     name: "rpz.seguranca.bloqueio"
@@ -1692,7 +1692,7 @@ ZONE_ALLOW_NEW="$WORKDIR/${ZONE_ALLOW_NAME}.zone.new"
 # 1) Baixar feeds (somente fontes de segurança, sem listas “controversas”)
 ##############################################################################
 
-# Fonte 1: URLhaus (abuse.ch), malware/C2 (hostfile)
+# Fonte 1: URLhaus (abuse.ch), malware e infraestrutura relacionada (hostfile)
 URLHAUS_URL="https://urlhaus.abuse.ch/downloads/hostfile/"
 URLHAUS_FILE="$WORKDIR/urlhaus.hosts"
 log "Baixando URLhaus hostfile..."
@@ -1869,11 +1869,11 @@ Torne o script executável
 sudo chmod 0755 /usr/local/bin/update-unbound-rpz.sh
 ```
 
-### 8.3 Nota sobre feeds (PhishTank / Spamhaus / licenças)
+### 8.3 Nota sobre feeds (URLhaus / PhishTank / Spamhaus / licenças)
 
-- **URLhaus (abuse.ch)**: excelente para malware/C2. Verifique **termos de uso** antes de uso comercial e respeite limites/fair use.
+- **URLhaus (abuse.ch)**: fonte voltada a URLs/domínios associados a malware. Pode pegar infraestrutura relacionada a campanhas maliciosas, mas não deve ser tratada como “feed completo de C2”.
 - **PhishTank**: o script pode usar o **dump público** (online-valid.csv), sem chamadas de API. A API existe (informativo), mas não é indicada para uso direto em RPZ/DNS de ISP; respeite termos/rate limits. O dump público pode falhar, retornar pouco conteúdo ou sofrer rate limit. Por isso, quando `ENABLE_PHISHTANK=1`, o script preserva a última blocklist boa se a nova lista ficar pequena demais.
-- **Spamhaus DROP/EDROP**: listas de **IP/prefixos** (não de domínios). Faz mais sentido em firewall/antiabuso ou em RPZ por **Response IP** (avançado e com risco de falso positivo).
+- **Spamhaus DROP/EDROP**: listas de **IP/prefixos** (não de domínios). Não entram no script de RPZ por QNAME deste guia. Fazem mais sentido em firewall/antiabuso ou em RPZ por **Response IP** (avançado e com risco de falso positivo).
 
 > **Importante:** este guia **não fornece feed/lista pronta** de domínios. Ele mostra **como consumir** feeds *quando* você tiver fontes com **licença/termos compatíveis** com o seu uso e como transformar isso em zonefiles RPZ com governança (allowlist, auditoria e rollback).
 
@@ -1885,7 +1885,7 @@ Boas práticas de “higiene” com feeds:
 
 Critério de escolha (por que este guia evita listas “controversas”):
 - O objetivo aqui é **segurança**, não “controle de conteúdo”. Feeds de ads/tracking/pornografia/apostas etc aumentam risco jurídico e dano colateral.
-- Em ISP, foque em fontes com reputação e objetivo claro de **ameaça** (phishing/malware/C2), e mantenha processo de revisão/allowlist.
+- Em ISP, foque em fontes com reputação e objetivo claro de **ameaça** (phishing, malware e indicadores de infraestrutura maliciosa), e mantenha processo de revisão/allowlist.
 
 ### 8.4 systemd service + timer (a cada 6 horas, com jitter)
 
@@ -3004,7 +3004,7 @@ host deb.debian.org
 Boas práticas para comunicar e operar o **RPZ de segurança** sem virar “censura acidental”:
 
 1) **Escopo estrito e público**  
-   - bloquear apenas *phishing/malware/botnet/C2*;
+   - bloquear apenas ameaças objetivas, como *phishing*, *malware* e indicadores relacionados a infraestrutura maliciosa;
    - evitar listas de ads/tracking/categorias.
 
 2) **Processo de exceção (allowlist) e rollback**  
