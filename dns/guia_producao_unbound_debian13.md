@@ -2559,6 +2559,39 @@ action   = nftables-unbound-set
 EOF
 ```
 
+Se este servidor também usa Fail2Ban para proteger SSH, mantenha a jail `sshd`
+com action própria. Não use `nftables-unbound-set` para SSH, porque essa action
+foi criada para inserir IPs nos sets usados pelo recursor DNS.
+
+Confira a porta real do SSH:
+
+```bash
+sudo ss -lntp | grep sshd
+sudo sshd -T | grep '^port '
+```
+
+Se o SSH usa porta administrativa customizada, deixe explícito em
+`/etc/fail2ban/jail.d/sshd.local`:
+
+```ini
+[sshd]
+enabled = true
+port    = PORTA_SSH_ADMINISTRATIVA
+backend = systemd
+banaction = nftables
+```
+
+Depois valide:
+
+```bash
+sudo systemctl restart fail2ban
+sudo fail2ban-client get sshd actions
+sudo fail2ban-client status sshd
+```
+
+O esperado é a jail `sshd` aparecer com action `nftables`, não
+`nftables-unbound-set`.
+
 ### 11.6 Como habilitar as jails (passo a passo)
 
 Este passo a passo deixa explícito **onde** habilitar e **como** validar antes, para evitar:
@@ -3010,22 +3043,47 @@ debian.org A
 EOF
 ```
 
-3) Rode por 20s a 2.000 QPS (ajuste):
+3) Rode em degraus, respeitando o `ip-ratelimit` configurado.
+
+Neste guia, o ponto de partida usado em `ip-ratelimit` é `200`. Como o teste
+abaixo sai de um único IP (`127.0.0.1`), não faz sentido começar acima desse
+valor em um teste básico. Se passar do limite, o Unbound pode descartar o
+excesso e o `dnsperf` vai mostrar `Queries lost`/`Query timed out`.
 
 ```bash
-dnsperf -s 127.0.0.1 -d /tmp/dnsperf-queries.txt -l 20 -Q 2000
+dnsperf -s 127.0.0.1 -d /tmp/dnsperf-queries.txt -l 20 -Q 50
+dnsperf -s 127.0.0.1 -d /tmp/dnsperf-queries.txt -l 20 -Q 100
+dnsperf -s 127.0.0.1 -d /tmp/dnsperf-queries.txt -l 20 -Q 180
+dnsperf -s 127.0.0.1 -d /tmp/dnsperf-queries.txt -l 20 -Q 200
 ```
 
-4) Repita uma segunda vez (cache quente) e compare:
+4) Interprete o resultado:
+- em teste básico, o ideal é `Queries lost: 0`;
+- `NOERROR 100%` nas respostas completadas indica que o conteúdo resolvido está ok;
+- perdas logo acima do `ip-ratelimit` são esperadas, porque o excesso é dropado;
+- perdas abaixo do limite exigem investigação (CPU, memória, firewall, buffers, logs pesados, disco ou saturação).
+
+5) Se quiser confirmar se a perda veio do `ip-ratelimit`:
+
+```bash
+sudo unbound-control stats_noreset | grep -E 'queries_ip_ratelimited'
+sudo grep -i 'ip_ratelimit' /var/log/unbound/unbound.log | tail -n 30
+```
+
+6) Repita uma segunda vez (cache quente) e compare:
 - taxa de perdas (`lost`),
-- latência média/p95,
+- latência média,
 - throughput.
 
-5) Correlacione com stats do Unbound:
+7) Correlacione com stats do Unbound:
 
 ```bash
 sudo unbound-control stats_noreset | grep -E 'total\.num\.queries|total\.num\.cachehits|total\.num\.cachemiss'
 ```
+
+Para teste de stress acima do `ip-ratelimit`, faça somente em janela controlada
+e sabendo que perdas podem indicar a proteção funcionando, não necessariamente
+falha do recursor.
 
 ### 12.6 Fazer o próprio servidor usar o Unbound local sem “quebrar” o `resolv.conf`
 
