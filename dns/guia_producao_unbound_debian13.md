@@ -1,7 +1,7 @@
 # Guia de Produção: Unbound no Debian 13 (Trixie) como DNS recursivo para ISP com DNSSEC e RPZ de segurança
 
 *Criado em: 23 de janeiro de 2026*  
-*Última atualização em: 17 de junho de 2026*
+*Última atualização em: 18 de junho de 2026*
 
 Em ISP, resolvedor recursivo é serviço de sustentação: se fica aberto, vira risco de abuso; se fica lento, parece que a internet inteira está ruim. Este guia mostra a configuração que uso como base para **Unbound** no **Debian 13 (Trixie)**, com **DNSSEC**, **QNAME Minimization**, **RPZ** para feeds de ameaça e automação para manter a operação previsível.
 
@@ -620,29 +620,20 @@ server:
     # Protege contra respostas tentando “remover” DNSSEC no caminho.
     harden-dnssec-stripped: yes
 
-    # Endurece a validação do caminho de referrals.
-    #
-    # Observação: a documentação do Unbound trata essa opção como experimental
-    # e alerta para carga extra de consultas. Foi mantida aqui porque foi
-    # validada no cenário deste guia. Se aparecer latência anormal ou falha
-    # específica de resolução, teste desativar esta opção primeiro.
-    harden-referral-path: yes
+    # Mantém desativado por padrão: esta opção é experimental e pode causar
+    # SERVFAIL em domínios legítimos dependendo da cadeia autoritativa/CDN.
+    harden-referral-path: no
 
     # Protege contra algumas respostas “abaixo de NXDOMAIN”.
     harden-below-nxdomain: yes
 
-    # Protege contra tentativa de downgrade de algoritmo DNSSEC.
-    #
-    # Atenção: pode quebrar domínios com DNSSEC mal publicado ou cenários
-    # multi-signer que não entregam todas as assinaturas esperadas.
-    harden-algo-downgrade: yes
+    # Mantém desativado por padrão: em alguns cenários com DNSSEC/CDN/multi-signer,
+    # pode causar SERVFAIL em domínios legítimos.
+    harden-algo-downgrade: no
 
-    # Randomiza maiúsculas/minúsculas no QNAME para aumentar entropia contra spoofing.
-    #
-    # Atenção: é uma mitigação experimental. Se um domínio específico falhar
-    # por servidor autoritativo que não preserva o case corretamente, use
-    # `caps-exempt:` para esse domínio ou desative esta opção.
-    use-caps-for-id: yes
+    # Mantém desativado por padrão: é uma mitigação experimental e depende de
+    # autoritativos preservarem corretamente maiúsculas/minúsculas no QNAME.
+    use-caps-for-id: no
 
     # Pode melhorar performance/negativos com DNSSEC (use com cuidado em ambientes muito heterogêneos).
     aggressive-nsec: yes
@@ -787,7 +778,34 @@ server:
 EOF
 ```
 
-As opções `harden-referral-path`, `harden-algo-downgrade` e `use-caps-for-id` aumentam o hardening, mas não são “gratuitas”. A própria documentação do Unbound recomenda cautela por compatibilidade, carga extra ou comportamento experimental. Se você tiver falhas estranhas em domínios específicos, faça rollback dessas três opções primeiro e valide novamente.
+As opções `harden-referral-path`, `harden-algo-downgrade` e `use-caps-for-id` ficam desativadas por padrão porque, em validação real, podem gerar `SERVFAIL` em domínio legítimo dependendo da cadeia autoritativa, CDN, DNSSEC, cache e caminho de recursão usado no momento.
+
+Se você quiser testar em ambiente controlado, ative uma por vez e valide domínios reais antes de deixar em produção:
+
+```conf
+server:
+    harden-referral-path: yes
+```
+
+```conf
+server:
+    harden-algo-downgrade: yes
+```
+
+```conf
+server:
+    use-caps-for-id: yes
+```
+
+Depois de cada alteração:
+
+```bash
+sudo unbound-checkconf
+sudo systemctl restart unbound
+dig @127.0.0.1 deb.debian.org A +dnssec +comments
+dig @127.0.0.1 . DNSKEY +dnssec +multi +comments
+dig @127.0.0.1 dnssec-failed.org A +dnssec +comments
+```
 
 6) Logs em arquivo (padrão deste guia).  
 Crie `/etc/unbound/unbound.conf.d/50-logging.conf`:
@@ -2303,8 +2321,8 @@ O Fail2Ban **não bloqueia conteúdo**. Ele **bane IPs abusivos** no servidor DN
 > IMPORTANTE: `log-queries`/`log-replies` é **pesado** em recursor de ISP.  
 > Use **apenas para calibração temporária** (ex.: **24–48h**) e depois desative.
 
-As jails **[unbound-qps]** e **[unbound-nxdomain]** dependem desses logs por query/reply.  
-Para não “poluir” a configuração principal, a recomendação é habilitar isso via um arquivo dedicado em `unbound.conf.d` fica simples ligar/desligar.
+A jail **[unbound-qps]** depende de `log-queries`; as jails **[unbound-nxdomain]** e **[unbound-refused]** dependem de `log-replies`.
+Para não “poluir” a configuração principal, a recomendação é habilitar isso via um arquivo dedicado em `unbound.conf.d`; assim fica simples ligar/desligar.
 
 Crie `/etc/unbound/unbound.conf.d/55-fail2ban-query-logs.conf`:
 
@@ -2333,7 +2351,7 @@ sudo systemctl restart unbound
 
 Em produção, após calibrar (24–48h):
 - **desative** esse arquivo para reduzir volume de log, e
-- volte as jails **[unbound-qps]** e **[unbound-nxdomain]** para `enabled = false` (elas não fazem sentido sem esses logs).
+- volte as jails **[unbound-qps]**, **[unbound-nxdomain]** e **[unbound-refused]** para `enabled = false` (elas não fazem sentido sem esses logs).
 
 Para desativar rapidamente:
 
@@ -2424,22 +2442,34 @@ sudo fail2ban-regex /tmp/unbound.tail.log /etc/fail2ban/filter.d/unbound-qps.con
 sudo fail2ban-regex /tmp/unbound.tail.log /etc/fail2ban/filter.d/unbound-nxdomain.conf
 ```
 
-#### 11.4.3 Tentativa externa / recusas depende do log aparecer no seu nível de verbosity
+Se `log-queries`/`log-replies` não estiverem ativos, esses dois filtros devem retornar `0 matched`. Isso é normal e, em produção, é o comportamento esperado quando você não está em janela de calibração.
+
+#### 11.4.3 Respostas REFUSED (opcional, exige `log-replies`)
 
 Crie `/etc/fail2ban/filter.d/unbound-refused.conf`:
 
 ```bash
 sudo tee /etc/fail2ban/filter.d/unbound-refused.conf >/dev/null <<'EOF'
 [Definition]
-# Exemplos típicos (podem variar):
+# Formato observado no Unbound 1.22 com `log-replies`:
+# ... reply: 198.51.100.200 exemplo.invalid. A IN REFUSED ...
+#
+# Compatibilidade adicional com formato antigo/alternativo:
 # ... refused query from ip4 198.51.100.200 port 12345 ...
 # ... refused query from ip6 2001:db8::200 port 12345 ...
-failregex = ^.*refused query from (?:ip[46]\s+)?<HOST>\s+port\s+\d+.*$
+#
+# Não casa com:
+# ... SERVFAIL <...>: ... from <servidor-autoritativo> got REFUSED
+#
+# Esse caso é recusa de servidor autoritativo/upstream, não um cliente abusando
+# diretamente do recursor.
+failregex = ^.*\breply:\s+<HOST>\s+\S+\s+\S+\s+IN\s+REFUSED\b.*$
+            ^.*refused query from (?:ip[46]\s+)?<HOST>\s+port\s+\d+.*$
 ignoreregex =
 EOF
 ```
 
-#### 11.4.4 RPZ hits (segurança), recomendado (log leve)
+#### 11.4.4 RPZ hits (segurança), opcional e agressivo (log leve)
 
 Crie `/etc/fail2ban/filter.d/unbound-rpz-seguranca.conf`:
 
@@ -2447,15 +2477,12 @@ Crie `/etc/fail2ban/filter.d/unbound-rpz-seguranca.conf`:
 sudo tee /etc/fail2ban/filter.d/unbound-rpz-seguranca.conf >/dev/null <<'EOF'
 [Definition]
 # Exemplo real (formato típico do Unbound):
-# info: rpz: applied [rpz-seguranca] www.exemplo.invalid. A IN CNAME . 100.64.1.10@56412 www.exemplo.invalid. A IN
+# info: rpz: applied [rpz-seguranca] exemplo.invalid. rpz-nxdomain 100.64.1.10@56412 exemplo.invalid. A IN
 #
-# Compatibilidade extra:
-# - alguns ambientes usam `rpz-log-name` diferente (ex.: o nome da zona)
-# - alguns formatos podem incluir `rpz-name=...`
-#
-# Nota: em geral, o `rpz-log-name` é o caminho mais estável (ex.: "rpz-seguranca").
-# Mesmo assim, deixamos compatibilidade com o nome da zona RPZ, caso seu log venha assim.
-failregex = ^.*\brpz:\s+applied\s+(?:\[(?:rpz-seguranca|rpz\.seguranca\.bloqueio)\]|rpz-name=(?:rpz-seguranca|rpz\.seguranca\.bloqueio)).*\s<HOST>(?:[@#]\d+)?\s.*$
+# Este filtro casa apenas quando o log traz IP de cliente após `rpz-nxdomain`.
+# Linhas de RPZ sem IP de cliente podem aparecer como "missed" no fail2ban-regex
+# e isso não significa erro do filtro.
+failregex = ^.*\brpz:\s+applied\s+\[rpz-seguranca\].*\srpz-nxdomain\s+<HOST>(?:[@#]\d+)?\s+.*$
 ignoreregex =
 EOF
 ```
@@ -2497,12 +2524,16 @@ bantime.maxtime   = 24h
 # Antes de habilitar qualquer jail em produção, valide o regex contra o seu log real:
 # sudo fail2ban-regex /var/log/unbound/unbound.log /etc/fail2ban/filter.d/unbound-rpz-seguranca.conf
 # Se der 0 matched, ajuste o filtro (formato de log pode variar entre versões).
+#
+# Em ISP, mantenha a jail de RPZ desativada por padrão. A RPZ já bloqueia o
+# domínio consultado. Banir o IP do cliente no Fail2Ban pode deixar esse cliente
+# sem resolução DNS até o fim do ban.
 
 [unbound-rpz-seguranca]
 enabled  = false
 filter   = unbound-rpz-seguranca
 logpath  = /var/log/unbound/unbound.log
-maxretry = 30
+maxretry = 300
 action   = nftables-unbound-set
 
 [unbound-qps]
@@ -2523,7 +2554,7 @@ action   = nftables-unbound-set
 enabled  = false
 filter   = unbound-refused
 logpath  = /var/log/unbound/unbound.log
-maxretry = 10
+maxretry = 100
 action   = nftables-unbound-set
 EOF
 ```
@@ -2564,8 +2595,31 @@ sudo fail2ban-regex /tmp/unbound-rpz-applied.log /etc/fail2ban/filter.d/unbound-
 Como decidir:
 - se der **0 matched**, **não habilite** a jail ainda; ajuste a regex (formato do log pode variar);
 - se der `matched > 0`, o filtro está funcionando no seu ambiente.
+- se algumas linhas aparecerem como `missed` por não terem IP de cliente depois de `rpz-nxdomain`, isso é esperado; o Fail2Ban só consegue banir quando existe IP de origem na linha.
 
-#### 11.6.3 Produção contínua (log leve): habilitar RPZ (recomendado)
+#### 11.6.3 Produção contínua: manter RPZ como bloqueio por domínio (recomendado)
+
+A configuração RPZ do Unbound deve continuar ativa, porque ela bloqueia o domínio malicioso ou indesejado com `NXDOMAIN`.
+
+Já a jail `[unbound-rpz-seguranca]` do Fail2Ban deve continuar desativada por padrão:
+
+```ini
+[unbound-rpz-seguranca]
+enabled  = false
+```
+
+Motivo: se um cliente consultar vários domínios presentes na RPZ, o domínio já será bloqueado pela política. Se o Fail2Ban também banir o IP do cliente, esse cliente pode ficar sem qualquer resolução DNS até o fim do ban, o que em ambiente de ISP costuma gerar impacto operacional e chamado de suporte.
+
+Use os logs de RPZ primeiro para:
+- identificar cliente infectado;
+- confirmar falso positivo;
+- abrir atendimento;
+- criar exceção controlada na lista branca;
+- decidir se algum bloqueio manual faz sentido.
+
+#### 11.6.4 Opcional: habilitar `[unbound-rpz-seguranca]` como contenção agressiva
+
+Habilite esta jail somente se você aceitar o efeito operacional: o cliente banido deixa de consultar o recursor durante o `bantime`.
 
 No bloco `[unbound-rpz-seguranca]`, troque:
 
@@ -2579,9 +2633,11 @@ por:
 enabled  = true
 ```
 
-#### 11.6.4 Calibração temporária (log pesado): QPS e NXDOMAIN
+Mantenha `maxretry` conservador e revise `ignoreip` antes de ativar. Em provedor, evite usar essa jail como resposta automática para qualquer hit de RPZ.
 
-As jails `[unbound-qps]` e `[unbound-nxdomain]` **só fazem sentido** se você também habilitou o passo **11.2** (arquivo `55-fail2ban-query-logs.conf` com `log-queries/log-replies`).
+#### 11.6.5 Calibração temporária (log pesado): QPS e NXDOMAIN
+
+As jails `[unbound-qps]`, `[unbound-nxdomain]` e `[unbound-refused]` **só fazem sentido** se você também habilitou o passo **11.2** (arquivo `55-fail2ban-query-logs.conf` com `log-queries/log-replies`).
 
 Para calibrar por 24–48h, habilite (troque `enabled  = false` por `enabled  = true`):
 
@@ -2595,9 +2651,19 @@ enabled  = true
 
 Depois de calibrar:
 - desative o arquivo `55-fail2ban-query-logs.conf` (passo 11.2), e
-- volte `[unbound-qps]` e `[unbound-nxdomain]` para `enabled  = false`.
+- volte `[unbound-qps]`, `[unbound-nxdomain]` e `[unbound-refused]` para `enabled  = false`.
 
-#### 11.6.5 Opcional: `[unbound-refused]` depende do log aparecer
+#### 11.6.6 Opcional: `[unbound-refused]` também depende de `log-replies`
+
+A jail `[unbound-refused]` depende de linhas `reply: ... REFUSED`, portanto só faz sentido quando o passo **11.2** estiver ativo.
+
+Ela não deve usar como gatilho linhas do tipo:
+
+```text
+SERVFAIL <...>: all servers for this domain failed ... got REFUSED
+```
+
+Esse formato indica recusa vinda de servidor autoritativo/upstream durante a resolução, não necessariamente abuso do cliente que consultou o recursor.
 
 Antes de habilitar `[unbound-refused]`, valide o filtro contra o log real:
 
@@ -2614,7 +2680,7 @@ Se o filtro casar com seu log e você quiser habilitar:
 enabled  = true
 ```
 
-#### 11.6.6 Aplicar mudanças e validar
+#### 11.6.7 Aplicar mudanças e validar
 
 1) Reinicie o Unbound **apenas se** você habilitou/alterou o passo **11.2**:
 
@@ -2645,7 +2711,7 @@ sudo nft list set inet filter f2b-unbound4
 sudo nft list set inet filter f2b-unbound6
 ```
 
-5) Teste controlado, confirma integração Fail2Ban -> nftables e valida timeout no seu ambiente:
+5) Se você habilitou a jail opcional `[unbound-rpz-seguranca]`, faça um teste controlado para confirmar a integração Fail2Ban -> nftables e validar o timeout no seu ambiente:
 
 ```bash
 # Banir um IP de teste (use um IP de laboratório/exemplo, não um cliente real)
@@ -2688,13 +2754,13 @@ sudo journalctl -u unbound -f
 >
 > Para “gerar log”, faça algumas consultas de teste (seção 12) e rode o comando novamente.
 
-2) Simule um bloqueio RPZ usando o domínio de teste:
+2) Simule um bloqueio RPZ usando o domínio de teste. Esse teste valida o bloqueio por domínio, não precisa banir o cliente no Fail2Ban:
 
 ```bash
 dig @127.0.0.1 teste-malware.exemplo.invalid A +short
 ```
 
-3) Desbanir manualmente:
+3) Se você habilitou a jail opcional de RPZ e precisou remover um ban manualmente:
 
 ```bash
 sudo fail2ban-client set unbound-rpz-seguranca unbanip 100.64.1.10
@@ -3083,7 +3149,7 @@ sudo nft flush set inet filter f2b-unbound6
 - [ ] DNSSEC validando (sigok ok, sigfail SERVFAIL)
 - [ ] RPZ de segurança aplicando (NXDOMAIN nos testes)
 - [ ] Timer de atualização RPZ funcionando: `systemctl list-timers | grep unbound-rpz`
-- [ ] Fail2Ban ativo e com `unbound-rpz-seguranca` habilitada (após calibração)
+- [ ] Fail2Ban ativo; jails agressivas continuam desativadas, salvo decisão operacional documentada
 - [ ] `ignoreip` revisado (sem banir BRAS/infra)
 
 Comandos de validação (rápidos e objetivos):
